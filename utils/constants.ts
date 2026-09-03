@@ -14,6 +14,7 @@ export const ENV_KEYS = {
 export const TIMEOUTS = {
   navigationMs: 30_000,
   actionMs: 15_000,
+  projectsPageSettleMs: 5_000,
   progressPollMs: 2_000,
 } as const;
 

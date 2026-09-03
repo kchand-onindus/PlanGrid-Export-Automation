@@ -3,7 +3,7 @@ import path from 'node:path';
 import type { Page } from 'playwright';
 import { timeouts } from './config.js';
 import { logError, logger } from './logger.js';
-import { PROJECT_SELECTORS } from '../utils/constants.js';
+import { PROJECT_SELECTORS, URLS } from '../utils/constants.js';
 import type { Project, ProjectResult } from './types.js';
 
 function safeFolderName(project: Project): string {
@@ -28,18 +28,18 @@ async function selectProject(page: Page, project: Project): Promise<boolean> {
   await searchInput.fill(searchTerm);
 
   const rows = page.locator(PROJECT_SELECTORS.projectRows);
+  const matchingRows = rows.filter({ hasText: searchTerm });
   try {
-    await rows.first().waitFor({ state: 'visible', timeout: timeouts.actionMs });
+    await matchingRows.first().waitFor({ state: 'visible', timeout: timeouts.actionMs });
   } catch {
     logger.warn('Project match not found', {
       projectName: project.projectName,
       searchTerm,
-      reason: 'No project rows became visible after searching',
+      reason: 'No matching project rows became visible after searching',
     });
     return false;
   }
 
-  const matchingRows = rows.filter({ hasText: searchTerm });
   const matchingCount = await matchingRows.count();
   if (matchingCount === 0) {
     logger.warn('Project match not found', {
@@ -50,10 +50,10 @@ async function selectProject(page: Page, project: Project): Promise<boolean> {
     return false;
   }
   if (matchingCount > 1) {
-    logger.warn('Multiple project rows matched; selecting the first exact search result', {
-      searchTerm,
-      matchingCount,
-    });
+    throw new Error(
+      `Multiple project rows matched project name "${searchTerm}"; refusing to select an ambiguous result `
+        + `(matchingCount: ${matchingCount})`,
+    );
   }
 
   logger.info('Opening matching project', { searchTerm, matchingCount });
@@ -132,6 +132,20 @@ export async function exportProject(
       projectNumber: project.projectNumber,
       downloadDirectory,
     });
+
+    logger.info('Opening projects landing page before searching', { projectsUrl: URLS.projects });
+    await page.goto(URLS.projects, {
+      waitUntil: 'domcontentloaded',
+      timeout: timeouts.navigationMs,
+    });
+    await page.locator(PROJECT_SELECTORS.searchInput).waitFor({
+      state: 'visible',
+      timeout: timeouts.actionMs,
+    });
+    logger.info('Waiting for projects list to finish loading', {
+      settleMs: timeouts.projectsPageSettleMs,
+    });
+    await page.waitForTimeout(timeouts.projectsPageSettleMs);
 
     const projectSelected = await selectProject(page, project);
     if (!projectSelected) {
