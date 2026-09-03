@@ -1,43 +1,90 @@
 # PlanGrid Export Automation
 
-Minimal Playwright automation for exporting project documents.
+This automation logs into PlanGrid, searches for each enabled project, creates or finds the requested As-built export, waits for it to finish, downloads the ZIP file, and logs out when the run is complete.
 
-## Setup
+## One-time setup
+
+From the repository folder, run:
 
 ```bash
 npm install
-npx playwright install chromium
+npm run install:browsers
 ```
 
-Fill in `PLANGRID_EMAIL` and `PLANGRID_PASSWORD` in `.env` before running the export. The password is never written to the logs.
+## Configure the environment
 
-## Run the export flow
+Fill in `.env` before running the script:
 
-The browser is visible by default. Run the export flow with:
+```env
+PLANGRID_EMAIL=your_email
+PLANGRID_PASSWORD=your_password
+PLATFORM_URL=https://app.plangrid.com
+DOWNLOAD_DIR=downloads
+```
+
+`DOWNLOAD_DIR` may be a relative path, which is resolved inside this repository, or an absolute path. The password is never written to the logs.
+
+## Prepare the project input
+
+Update `input/projects.csv` with one project per row:
+
+```csv
+project_number,project_name,enabled,start_date,end_date
+,Example Project,true,,
+12345,Another Project,true,2026-01-01,2026-08-31
+12346,Disabled Project,false,,
+```
+
+`project_name` and `enabled` are required. `enabled` must be `true` or `false`. Project number, start date, and end date may be blank. Any dates provided must use `YYYY-MM-DD` format.
+
+## Run the automation
+
+Run the visible browser flow with:
 
 ```bash
 npm run export
 ```
 
-This currently opens PlanGrid, handles the email and password steps, clicks Autodesk Sign in, processes the project exports, and logs out after the project loop. If OTP or additional verification appears, it pauses for manual completion. Each run creates a separate timestamped file such as `logs/export-2026-09-03_18-36-40.log`.
-
-For a non-visible run:
+The browser is visible by default. An optional non-visible run is available with:
 
 ```bash
 npm run headless
 ```
 
-## Project export flow
+## Run flow
 
-The project input is read from `input/projects.csv`. Enabled projects will eventually be searched, checked for completion, and downloaded into `downloads/<project-number>/`.
+When `npm run export` starts, it opens the configured `PLATFORM_URL` in a visible browser. The flow is:
 
-Shared constants and environment helpers live in the root-level `utils/` folder, separate from the executable workflow code in `src/`.
+1. PlanGrid opens and the email address is submitted.
+2. The browser moves to Autodesk, where the email address is filled and submitted again.
+3. If Autodesk skips the password step, the script waits for the PlanGrid projects landing page.
+4. If Autodesk shows a password field, the script fills the password and clicks **Sign in**.
+5. **[Manual action — see “Autodesk OTP and CAPTCHA” below](#autodesk-otp-and-captcha):** If CAPTCHA, OTP, or verification appears, the script pauses. Complete it in the browser, submit it, wait for the PlanGrid projects page, and click the **Resume** play button in the Playwright window.
+6. The script searches `input/projects.csv` by project name and processes each enabled project.
+7. For each project, it opens Settings → Download and Export As-Builts, uses the provided dates when present, waits for `100%`, and downloads the ZIP.
+8. After the project loop, it returns to the projects page, attempts to log out, and verifies the login page.
+9. The script pauses one final time for manual verification. Use the same **Resume** play button after checking the session and logging out if necessary; the browser then closes.
 
-Each row must contain a project name and `enabled` value of `true` or `false`. Project number, start date, and end date may be blank. Nonblank dates must use `YYYY-MM-DD` format:
+If an error occurs during processing or automatic logout, the final verification pause still appears so the session can be reviewed and closed manually.
 
-```csv
-project_number,project_name,enabled,start_date,end_date
-demo-001,Demo Project,true,2026-01-01,2026-08-31
-```
+## Autodesk OTP and CAPTCHA
 
-The login and OTP flow is intentionally isolated in `src/auth.ts` so it can be filled in after the platform's exact login behavior is confirmed.
+After the email and password steps, Autodesk may request a CAPTCHA, OTP, or additional verification.
+
+When this happens:
+
+1. Complete the CAPTCHA or verification in the browser.
+2. Enter the OTP.
+3. Click Autodesk’s Submit, Next, or equivalent button.
+4. Wait until the browser reaches the PlanGrid projects landing page.
+5. Click the **Resume** play button in the Playwright window that opened with the browser.
+
+The automation will then continue with the project exports. If Autodesk signs in directly without OTP, it continues automatically.
+
+## Output
+
+- Input data: `input/projects.csv`
+- Downloaded ZIP files: the configured `DOWNLOAD_DIR`, inside a folder named after each project
+- Run logs: `logs/export-<timestamp>.log`
+
+Project names are cleaned when folder names are created. Special characters are replaced with underscores so names containing slashes, asterisks, punctuation, or other filesystem-sensitive characters can be used safely.
