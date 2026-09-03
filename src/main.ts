@@ -1,7 +1,8 @@
 import { chromium, type Browser, type Page } from 'playwright';
 import { browserOptions } from '../playwright.config.js';
 import { paths, platformUrl } from './config.js';
-import { login } from './auth.js';
+import { URLS } from '../utils/constants.js';
+import { login, logout } from './auth.js';
 import { readProjects } from './csv.js';
 import { logError, logger, logFilePath, wasErrorLogged } from './logger.js';
 import { exportProject } from './project-exporter.js';
@@ -9,6 +10,8 @@ import { exportProject } from './project-exporter.js';
 async function main(): Promise<void> {
   let browser: Browser | undefined;
   let page: Page | undefined;
+  let canAttemptLogout = false;
+  let logoutAttempted = false;
 
   try {
     logger.general('Starting PlanGrid export automation', {
@@ -34,8 +37,14 @@ async function main(): Promise<void> {
     logger.success('Platform page loaded', { url: page.url(), title: await page.title() });
 
     logger.info('Starting login flow');
-    await login(page);
-    logger.success('Login flow completed');
+    const loginResult = await login(page);
+    logger.success('Login stage completed', { result: loginResult });
+
+    if (page.url() !== URLS.projects) {
+      logger.info('Opening project landing page', { projectsUrl: URLS.projects });
+      await page.goto(URLS.projects, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+    }
+    canAttemptLogout = true;
 
     const results = [];
     for (const [index, project] of projects.entries()) {
@@ -66,6 +75,10 @@ async function main(): Promise<void> {
       }
     }
 
+    logger.info('All projects have been processed; starting logout');
+    logoutAttempted = true;
+    await logout(page);
+
     const successful = results.filter((result) => result.status === 'SUCCESS').length;
     const skipped = results.filter((result) => result.status === 'SKIPPED').length;
     const failed = results.filter((result) => result.status === 'FAILED').length;
@@ -84,6 +97,12 @@ async function main(): Promise<void> {
     process.exitCode = 1;
   } finally {
     if (browser) {
+      if (page && canAttemptLogout && !logoutAttempted) {
+        logger.warn('Attempting logout during cleanup after an earlier automation failure');
+        logoutAttempted = true;
+        await logout(page);
+      }
+
       if (page && !browserOptions.headless) {
         logger.warn('Session has ended; browser is about to close', {
           instruction: 'Log out manually and complete any final verification, then resume Playwright.',

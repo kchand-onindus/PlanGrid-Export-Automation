@@ -19,7 +19,7 @@ The browser is visible by default. Run the export flow with:
 npm run export
 ```
 
-This currently opens PlanGrid and pauses so you can complete the login/OTP manually. Each run creates a separate timestamped file such as `logs/export-2026-09-03_18-36-40.log`. The login and project selectors will be automated after the platform is inspected.
+This currently opens PlanGrid, handles the email and password steps, clicks Autodesk Sign in, processes the project exports, and logs out after the project loop. If OTP or additional verification appears, it pauses for manual completion. Each run creates a separate timestamped file such as `logs/export-2026-09-03_18-36-40.log`.
 
 For a non-visible run:
 
@@ -33,10 +33,10 @@ The project input is read from `input/projects.csv`. Enabled projects will event
 
 Shared constants and environment helpers live in the root-level `utils/` folder, separate from the executable workflow code in `src/`.
 
-Each row contains a date range in `YYYY-MM-DD` format:
+Each row must contain a project name and `enabled` value of `true` or `false`. Project number, start date, and end date may be blank. Nonblank dates must use `YYYY-MM-DD` format:
 
 ```csv
-project_number,project_name,enabled,from_date,to_date
+project_number,project_name,enabled,start_date,end_date
 demo-001,Demo Project,true,2026-01-01,2026-08-31
 ```
 

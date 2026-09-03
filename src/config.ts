@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import '../utils/env.js';
-import { TIMEOUTS, URLS } from '../utils/constants.js';
+import { ENV_KEYS, TIMEOUTS, URLS } from '../utils/constants.js';
 
 export const platformUrl = process.env.PLATFORM_URL ?? URLS.planGridLanding;
 
@@ -10,7 +10,9 @@ const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 
 export const paths = {
   inputFile: path.join(projectRoot, 'input', 'projects.csv'),
-  downloadRoot: path.join(projectRoot, 'downloads'),
+  downloadRoot: path.isAbsolute(process.env[ENV_KEYS.downloadDir] ?? '')
+    ? process.env[ENV_KEYS.downloadDir]!
+    : path.resolve(projectRoot, process.env[ENV_KEYS.downloadDir] ?? 'downloads'),
   logRoot: path.join(projectRoot, 'logs'),
 };
 

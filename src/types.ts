@@ -2,8 +2,8 @@ export interface Project {
   projectNumber: string;
   projectName: string;
   enabled: boolean;
-  fromDate: string;
-  toDate: string;
+  startDate?: string;
+  endDate?: string;
 }
 
 export type ProjectStatus = 'SUCCESS' | 'SKIPPED' | 'FAILED';
