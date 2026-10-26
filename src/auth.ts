@@ -5,6 +5,7 @@ import {
   AUTODESK_SELECTORS,
   LOGIN_SELECTORS,
   LOGOUT_SELECTORS,
+  PROJECT_SELECTORS,
   TIMEOUTS,
   URLS,
 } from '../utils/constants.js';
@@ -14,6 +15,50 @@ export type LoginResult =
   | 'ACTIVE_SESSION'
   | 'AUTODESK_HANDOFF'
   | 'PASSWORD_FLOW';
+
+async function waitForAuthenticatedProjects(page: Page, timeoutMs: number): Promise<void> {
+  const projectsUrl = new URL(URLS.projects);
+  const isProjectsUrl = (url: URL): boolean =>
+    url.hostname === projectsUrl.hostname && url.pathname.startsWith(projectsUrl.pathname);
+
+  if (!isProjectsUrl(new URL(page.url()))) {
+    await page.waitForURL(isProjectsUrl, { timeout: timeoutMs });
+  }
+  await page.locator(PROJECT_SELECTORS.searchInput).waitFor({
+    state: 'visible',
+    timeout: timeoutMs,
+  });
+}
+
+async function waitForManualVerification(page: Page, flowName: string): Promise<void> {
+  logger.warn('Manual Autodesk verification is required', {
+    flow: flowName,
+    currentUrl: page.url(),
+    instruction:
+      'Complete the CAPTCHA, OTP, or other Autodesk verification in the browser, submit it, wait for the PlanGrid projects page, then click Resume in the Playwright window.',
+  });
+
+  await page.pause();
+
+  try {
+    await waitForAuthenticatedProjects(page, TIMEOUTS.navigationMs);
+  } catch (error) {
+    logError('Manual Autodesk verification did not complete successfully', error, {
+      currentUrl: page.url(),
+      expectedUrl: URLS.projects,
+      searchSelector: PROJECT_SELECTORS.searchInput,
+      instruction: 'Resume only after Autodesk has redirected to the PlanGrid projects page.',
+    });
+    throw new Error(
+      `Autodesk verification was not completed before Resume. Current page: ${page.url()}`,
+      { cause: error },
+    );
+  }
+
+  logger.success('Authenticated PlanGrid projects page verified after manual Autodesk verification', {
+    currentUrl: page.url(),
+  });
+}
 
 async function handleAutodeskLogin(page: Page, email: string, password: string): Promise<LoginResult> {
   const emailInput = page.locator(AUTODESK_SELECTORS.emailInput);
@@ -31,13 +76,7 @@ async function handleAutodeskLogin(page: Page, email: string, password: string):
     .waitFor({ state: 'visible', timeout: TIMEOUTS.actionMs })
     .then(() => 'password' as const)
     .catch(() => null);
-  const projectsLanding = page
-    .waitForURL(
-      (url) =>
-        url.hostname === new URL(URLS.projects).hostname &&
-        url.pathname.startsWith(new URL(URLS.projects).pathname),
-      { timeout: TIMEOUTS.actionMs },
-    )
+  const projectsLanding = waitForAuthenticatedProjects(page, TIMEOUTS.actionMs)
     .then(() => 'landing' as const)
     .catch(() => null);
 
@@ -57,7 +96,7 @@ async function handleAutodeskLogin(page: Page, email: string, password: string):
     logger.info('Clicking Autodesk Sign in', { selector: AUTODESK_SELECTORS.signInButton });
     await page.locator(AUTODESK_SELECTORS.signInButton).click();
 
-    logger.debug('Waiting for direct PlanGrid landing page or OTP/verification');
+    logger.debug('Waiting for direct PlanGrid landing page or manual Autodesk verification');
     const returnedToProjects = page
       .waitForURL(
         (url) =>
@@ -65,7 +104,13 @@ async function handleAutodeskLogin(page: Page, email: string, password: string):
           url.pathname.startsWith(new URL(URLS.projects).pathname),
         { timeout: TIMEOUTS.actionMs },
       )
-      .then(() => true)
+      .then(async () => {
+        await page.locator(PROJECT_SELECTORS.searchInput).waitFor({
+          state: 'visible',
+          timeout: TIMEOUTS.actionMs,
+        });
+        return true;
+      })
       .catch(() => false);
 
     if (await returnedToProjects) {
@@ -75,12 +120,7 @@ async function handleAutodeskLogin(page: Page, email: string, password: string):
       return 'AUTODESK_HANDOFF';
     }
 
-    logger.warn('OTP or additional Autodesk verification is expected', {
-      currentUrl: page.url(),
-      instruction: 'Enter and submit the OTP manually, then resume Playwright.',
-    });
-    await page.pause();
-    logger.info('Autodesk OTP/verification pause resumed');
+    await waitForManualVerification(page, 'password submission');
     return 'AUTODESK_HANDOFF';
   }
 
@@ -172,11 +212,7 @@ export async function login(page: Page): Promise<LoginResult> {
     throw new Error('OTP is not automated yet; use `npm run export` for visible verification.');
   }
 
-  logger.warn('Waiting for OTP or manual verification', {
-    instruction: 'Complete OTP/verification in the visible browser, then resume Playwright.',
-  });
-  await page.pause();
-  logger.info('OTP/manual verification pause resumed');
+  await waitForManualVerification(page, 'PlanGrid password submission');
   return 'PASSWORD_FLOW';
 }
 

@@ -37,6 +37,10 @@ project_number,project_name,enabled,start_date,end_date
 
 `project_name` and `enabled` are required. `enabled` must be `true` or `false`. Project number, start date, and end date may be blank. Any dates provided must use `YYYY-MM-DD` format.
 
+## Reference scripts
+
+The `reference-scripts/` directory is personal reference material and is unrelated to the repository code. Agents and workflows must ignore it completely during repository analysis, implementation, testing, and workflow design. Its files must not be read, executed, modified, moved, deleted, or included in repository work.
+
 ## Run the automation
 
 Run the visible browser flow with:
@@ -59,7 +63,7 @@ When `npm run export` starts, it opens the configured `PLATFORM_URL` in a visibl
 2. The browser moves to Autodesk, where the email address is filled and submitted again.
 3. If Autodesk skips the password step, the script waits for the PlanGrid projects landing page.
 4. If Autodesk shows a password field, the script fills the password and clicks **Sign in**.
-5. **[Manual action — see “Autodesk OTP and CAPTCHA” below](#autodesk-otp-and-captcha):** If CAPTCHA, OTP, or verification appears, the script pauses. Complete it in the browser, submit it, wait for the PlanGrid projects page, and click the **Resume** play button in the Playwright window.
+5. **[Manual action — see “Autodesk OTP and CAPTCHA” below](#autodesk-otp-and-captcha):** If CAPTCHA, OTP, or verification appears, the script pauses. Complete it in the browser, submit it, wait for the PlanGrid projects page and project search box, and click **Resume** in the Playwright window.
 6. The script searches `input/projects.csv` by project name and processes each enabled project.
 7. For each project, it opens Settings → Download and Export As-Builts, uses the provided dates when present, waits for `100%`, and downloads the ZIP.
 8. After the project loop, it returns to the projects page, attempts to log out, and verifies the login page.
@@ -71,13 +75,15 @@ If an error occurs during processing or automatic logout, the final verification
 
 After the email and password steps, Autodesk may request a CAPTCHA, OTP, or additional verification.
 
-When this happens:
+When this happens, the automation does not try to solve or bypass the challenge:
 
 1. Complete the CAPTCHA or verification in the browser.
-2. Enter the OTP.
+2. If Autodesk requests an OTP, enter it.
 3. Click Autodesk’s Submit, Next, or equivalent button.
-4. Wait until the browser reaches the PlanGrid projects landing page.
-5. Click the **Resume** play button in the Playwright window that opened with the browser.
+4. Wait until the browser reaches the PlanGrid projects landing page and the project search box is visible.
+5. Click the **Resume** button in the Playwright window that opened with the browser.
+
+The script verifies the projects page and search box after Resume. If Autodesk is still showing CAPTCHA or verification, it stops with a clear authentication error instead of starting the export and failing later during project search.
 
 The automation will then continue with the project exports. If Autodesk signs in directly without OTP, it continues automatically.
 
