@@ -5,7 +5,7 @@ import { paths } from './config.js';
 export type LogLevel = 'GENERAL' | 'INFO' | 'DEBUG' | 'SUCCESS' | 'WARN' | 'ERROR';
 export type LogContext = Record<string, unknown>;
 
-function createLogFilePath(): string {
+function createLogFilePath(prefix: string): string {
   const timestamp = new Date()
     .toISOString()
     .replace('T', '_')
@@ -13,12 +13,10 @@ function createLogFilePath(): string {
     .replace('.', '-')
     .replace('Z', '');
 
-  return path.join(paths.logRoot, `export-${timestamp}.log`);
+  return path.join(paths.logRoot, `${prefix}-${timestamp}.log`);
 }
 
-const logFilePath = createLogFilePath();
 const loggedErrors = new WeakSet<object>();
-fs.mkdirSync(path.dirname(logFilePath), { recursive: true });
 
 function formatContext(context?: LogContext): string {
   if (!context || Object.keys(context).length === 0) return '';
@@ -39,7 +37,7 @@ function formatContext(context?: LogContext): string {
     .join('');
 }
 
-function write(level: LogLevel, message: string, context?: LogContext): void {
+function write(logFilePath: string, level: LogLevel, message: string, context?: LogContext): void {
   const line = `${new Date().toISOString()} [${level}] ${message}${formatContext(context)}`;
   const output = level === 'ERROR' || level === 'WARN' ? console.error : console.log;
 
@@ -52,31 +50,38 @@ function write(level: LogLevel, message: string, context?: LogContext): void {
   }
 }
 
-export const logger = {
-  general(message: string, context?: LogContext): void {
-    write('GENERAL', message, context);
-  },
+export function createLogger(prefix: string) {
+  const logFilePath = createLogFilePath(prefix);
+  fs.mkdirSync(path.dirname(logFilePath), { recursive: true });
+  const logger = {
+    general(message: string, context?: LogContext): void {
+      write(logFilePath, 'GENERAL', message, context);
+    },
 
-  info(message: string, context?: LogContext): void {
-    write('INFO', message, context);
-  },
+    info(message: string, context?: LogContext): void {
+      write(logFilePath, 'INFO', message, context);
+    },
 
-  debug(message: string, context?: LogContext): void {
-    write('DEBUG', message, context);
-  },
+    debug(message: string, context?: LogContext): void {
+      write(logFilePath, 'DEBUG', message, context);
+    },
 
-  success(message: string, context?: LogContext): void {
-    write('SUCCESS', message, context);
-  },
+    success(message: string, context?: LogContext): void {
+      write(logFilePath, 'SUCCESS', message, context);
+    },
 
-  warn(message: string, context?: LogContext): void {
-    write('WARN', message, context);
-  },
+    warn(message: string, context?: LogContext): void {
+      write(logFilePath, 'WARN', message, context);
+    },
 
-  error(message: string, context?: LogContext): void {
-    write('ERROR', message, context);
-  },
-};
+    error(message: string, context?: LogContext): void {
+      write(logFilePath, 'ERROR', message, context);
+    },
+  };
+  return { logger, logFilePath };
+}
+export type Logger = ReturnType<typeof createLogger>['logger'];
+export const { logger, logFilePath } = createLogger('export');
 
 // Backwards-compatible helpers for the existing workflow modules.
 export function log(message: string, context?: LogContext): void {
@@ -101,5 +106,3 @@ export function logError(message: string, error?: unknown, context?: LogContext)
 export function wasErrorLogged(error: unknown): boolean {
   return Boolean(error && (typeof error === 'object' || typeof error === 'function') && loggedErrors.has(error));
 }
-
-export { logFilePath };

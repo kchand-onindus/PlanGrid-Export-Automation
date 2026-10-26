@@ -2,6 +2,7 @@ export const URLS = {
   planGridLanding: 'https://app.plangrid.com',
   projects: 'https://app.plangrid.com/projects',
   autodeskSignIn: 'https://signin.autodesk.com',
+  kahuaLanding: 'https://devproductionlaunch.kahua.com/',
 } as const;
 
 export const ENV_KEYS = {
@@ -9,6 +10,9 @@ export const ENV_KEYS = {
   password: 'PLANGRID_PASSWORD',
   platformUrl: 'PLATFORM_URL',
   downloadDir: 'DOWNLOAD_DIR',
+  kahuaUsername: 'KAHUA_USERNAME',
+  kahuaPassword: 'KAHUA_PASSWORD',
+  kahuaUrl: 'KAHUA_URL',
 } as const;
 
 export const TIMEOUTS = {
@@ -55,4 +59,18 @@ export const LOGOUT_SELECTORS = {
   logoutLink: 'a[href="/logout"]',
   logoutText: 'Log Out',
   loginEmailInput: '#test-email',
+} as const;
+
+export const KAHUA_SELECTORS = {
+  canvas: '#uno-canvas',
+  enableAccessibility: '#uno-enable-accessibility',
+  semanticsRoot: '#uno-semantics-root',
+  usernameInput: 'input[xamlautomationid="UserName"]',
+  passwordInput: 'input[type="password"][xamlautomationid="Password"]',
+  nextButton: 'button[xamlautomationid="SignInNext"]',
+  messageBox: '[xamlautomationid="MessageBox"]',
+  devProductionNotice: 'p[aria-label^="Users should only be using DevProduction to stage data needed"]',
+  okButtons: 'button[xamlautomationid="CmdOk"]',
+  tasksNavigation: 'button[xamlautomationid="TasksNavigationItem"]',
+  messagesNavigation: 'button[xamlautomationid="MessagesNavigationItem"]',
 } as const;
