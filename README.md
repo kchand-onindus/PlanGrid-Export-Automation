@@ -1,8 +1,15 @@
-# PlanGrid Export Automation
+# PlanGrid Export and Kahua Import Automation
 
-This automation logs into PlanGrid, searches for each enabled project, creates or finds the requested As-built export, waits for it to finish, downloads the ZIP file, and logs out when the run is complete.
+This repository contains a two-part automation workflow. Part A downloads project exports from PlanGrid. Part B prepares those exports and will upload them to Kahua, but that workflow is still under development.
 
-## One-time setup
+## Workflow overview
+
+| Part | Status | Current capabilities | Commands |
+| --- | --- | --- | --- |
+| Part A — PlanGrid export | Available | Logs in, processes enabled projects, creates or finds As-built exports, downloads ZIP files, and logs out. | `npm run export`, `npm run headless` |
+| Part B — Kahua import | **In development** | Prepares one configured project's drawing files, validates the preparation plan, and automates Kahua login through landing-page verification. Project selection and file upload are not implemented yet. | `npm run import:prepare`, `npm run test:import`, `npm run kahua` |
+
+## Shared setup
 
 Use Node.js 22.2 or newer (the import preparation verifies ZIP checksums using Node's built-in CRC32 support).
 
@@ -13,7 +20,15 @@ npm install
 npm run install:browsers
 ```
 
-## Configure the environment
+## Repository note: reference scripts
+
+The `reference-scripts/` directory is personal reference material and is unrelated to the repository code. Agents and workflows must ignore it completely during repository analysis, implementation, testing, and workflow design. Its files must not be read, executed, modified, moved, deleted, or included in repository work.
+
+## Part A — PlanGrid export (available)
+
+Part A is the working export workflow. It logs into PlanGrid, finds each enabled project, creates or locates its As-built export, waits for completion, and downloads the ZIP file.
+
+### Configure the environment
 
 Fill in `.env` before running the script:
 
@@ -26,7 +41,7 @@ DOWNLOAD_DIR=downloads
 
 `DOWNLOAD_DIR` may be a relative path, which is resolved inside this repository, or an absolute path. The password is never written to the logs.
 
-## Prepare the project input
+### Prepare the project input
 
 Update `input/projects.csv` with one project per row:
 
@@ -39,11 +54,7 @@ project_number,project_name,enabled,start_date,end_date
 
 `project_name` and `enabled` are required. `enabled` must be `true` or `false`. Project number, start date, and end date may be blank. Any dates provided must use `YYYY-MM-DD` format.
 
-## Reference scripts
-
-The `reference-scripts/` directory is personal reference material and is unrelated to the repository code. Agents and workflows must ignore it completely during repository analysis, implementation, testing, and workflow design. Its files must not be read, executed, modified, moved, deleted, or included in repository work.
-
-## Run the automation
+### Run commands
 
 Run the visible browser flow with:
 
@@ -57,7 +68,7 @@ The browser is visible by default. An optional non-visible run is available with
 npm run headless
 ```
 
-## Run flow
+### Export flow
 
 When `npm run export` starts, it opens the configured `PLATFORM_URL` in a visible browser. The flow is:
 
@@ -73,7 +84,7 @@ When `npm run export` starts, it opens the configured `PLATFORM_URL` in a visibl
 
 If an error occurs during processing or automatic logout, the final verification pause still appears so the session can be reviewed and closed manually.
 
-## Autodesk OTP and CAPTCHA
+### Autodesk OTP and CAPTCHA
 
 After the email and password steps, Autodesk may request a CAPTCHA, OTP, or additional verification.
 
@@ -89,7 +100,7 @@ The script verifies the projects page and search box after Resume. If Autodesk i
 
 The automation will then continue with the project exports. If Autodesk signs in directly without OTP, it continues automatically.
 
-## Output
+### Part A output
 
 - Input data: `input/projects.csv`
 - Downloaded ZIP files: the configured `DOWNLOAD_DIR`, inside a folder named after each project
@@ -97,7 +108,19 @@ The automation will then continue with the project exports. If Autodesk signs in
 
 Project names are cleaned when folder names are created. Special characters are replaced with underscores so names containing slashes, asterisks, punctuation, or other filesystem-sensitive characters can be used safely.
 
-## Part two: prepare a single-project import
+## Part B — Kahua import (in development)
+
+> **Status:** Part B is actively being developed. It currently prepares local drawing files for one configured project and completes Kahua login. It does not yet select the destination project, navigate to the upload tool, upload files, or process multiple projects end to end.
+
+Current Part B commands:
+
+```bash
+npm run import:prepare
+npm run test:import
+npm run kahua
+```
+
+### Prepare a single-project import
 
 This stage prepares local drawing files for a later upload workflow. Run it with:
 
@@ -149,7 +172,7 @@ npm exec tsc -- --noEmit
 npm run test:import
 ```
 
-## Kahua browser workflow: login
+### Kahua browser workflow: login
 
 The Kahua browser workflow runs separately from PlanGrid export and local import preparation:
 
@@ -157,7 +180,9 @@ The Kahua browser workflow runs separately from PlanGrid export and local import
 npm run kahua
 ```
 
-It opens `https://devproductionlaunch.kahua.com/` in visible Chromium. Kahua may take a long time to update each login screen, so the workflow waits for the actual Uno controls without fixed sleeps. It enables Uno accessibility, fills the email field from `KAHUA_USERNAME`, activates the semantic Next button, waits for the password field, fills it from `KAHUA_PASSWORD`, and activates the final Sign In button. Direct semantic activation avoids coordinates that can briefly lag behind the canvas layout.
+It opens `https://devproductionlaunch.kahua.com/` in visible Chromium. The initial navigation allows up to 60 seconds for the browser to receive the server response, but it does not wait for the page's `DOMContentLoaded` event. This prevents Kahua's slow Uno initialization from being mistaken for a navigation failure. After the response arrives, the workflow waits for the actual Uno canvas and accessibility controls without fixed sleeps or a fixed rendering deadline.
+
+The workflow enables Uno accessibility, fills the email field from `KAHUA_USERNAME`, activates the semantic Next button, waits for the password field, fills it from `KAHUA_PASSWORD`, and activates the final Sign In button. Direct semantic activation avoids coordinates that can briefly lag behind the canvas layout.
 
 Separate entries have been added to `.env.example`. Set the same entries in your local `.env` when credentials are needed:
 

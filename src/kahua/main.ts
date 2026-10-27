@@ -26,7 +26,9 @@ async function main(): Promise<void> {
     });
     browser = await chromium.launch({ headless: false });
     const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
-    await page.goto(kahuaUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+    // Bound only the initial network response. The Uno application can take
+    // several minutes to initialize, so its readiness is verified by controls.
+    await page.goto(kahuaUrl, { waitUntil: 'commit', timeout: 60_000 });
     await submitKahuaUsername(page, logger);
     await submitKahuaPassword(page, logger);
     logger.info('Kahua login completed; pausing with Playwright Inspector on the authenticated application', {
