@@ -145,11 +145,21 @@ The script attempts automated login and exports without showing a browser or Ins
 
 The npm wrappers use macOS/Linux environment-variable syntax, so use the explicit PowerShell commands above on native Windows.
 
-### Chrome connection settings and hosted machines
+### Chrome connection notes
 
-The script reads only the `DevToolsActivePort` connection metadata from Chrome's standard user data directory and attaches through CDP. The export tab uses the existing default browser context and its authenticated session. Automatic logout is skipped even on failure. Only run one export script against the session at a time.
+For the standard [Chrome setup above](#existing-chrome-session):
 
-For the standard Chrome setup above, leave the following optional `.env` settings unset so the script discovers the connection automatically. Use them only for a custom Chrome data directory or an existing explicit debugging endpoint:
+- Leave `PLANGRID_CHROME_USER_DATA_DIR` and `PLANGRID_CDP_URL` unset in `.env`; the script finds the connection automatically.
+- Run only one export script against the Chrome session at a time.
+- Chrome stays open and signed in after the run, including when an export fails.
+
+#### Troubleshooting macOS permissions
+
+If the script cannot read Chrome's connection information, open **System Settings → Privacy & Security → Files & Folders**. Enable **Google Chrome** access for the terminal or host app running the script, then retry.
+
+#### Advanced connection settings
+
+Use these optional `.env` settings only for a custom Chrome data directory or an existing debugging endpoint:
 
 ```env
 PLANGRID_CHROME_USER_DATA_DIR=/absolute/path/to/chrome/user-data-directory
@@ -157,9 +167,24 @@ PLANGRID_CHROME_USER_DATA_DIR=/absolute/path/to/chrome/user-data-directory
 PLANGRID_CDP_URL=http://127.0.0.1:9222
 ```
 
-The user data directory setting is used only to find connection metadata; it does not launch, copy, or modify that profile. Do not share debugging WebSocket endpoints. On macOS, if reading the connection metadata is denied, allow the terminal or host app access to Google Chrome in System Settings → Privacy & Security → Files & Folders. Older Chrome versions require an already-enabled debugging endpoint in a separate user data directory; the command does not restart Chrome or add debugging flags automatically.
+The directory setting only tells the script where to find the connection information. The script does not launch Chrome or copy or modify its profile. Keep debugging WebSocket endpoints private.
 
-For a hosted machine, use a persistent desktop session accessible through Remote Desktop or VNC, and run Chrome and the script together under the same OS user. Authenticate in that machine's Chrome; your laptop's session is not transferred by deploying the repository. Keep the browser profile, output directory, and logs on persistent storage. Chrome session mode currently requires connection approval when prompted and the Inspector Resume steps; it is not an unattended scheduled workflow.
+Older Chrome versions require an already-enabled debugging endpoint in a separate user data directory. The script does not restart Chrome or enable debugging automatically.
+
+#### Running on a hosted or remote machine
+
+Use this setup only if the script runs on another computer or server:
+
+1. Use a persistent desktop session accessible through Remote Desktop or VNC.
+2. Run Chrome and the script on that machine under the same OS user, and sign in to PlanGrid there. Deploying the repository does not transfer your laptop's signed-in session.
+3. Keep the Chrome profile, downloads, and logs on persistent storage.
+4. Complete Chrome's **Allow** prompt when shown and both **Resume ▶** steps in Playwright Inspector, as described above.
+
+This mode still requires manual interaction and cannot currently run as an unattended scheduled job.
+
+#### How the connection works (technical background)
+
+The script reads Chrome's `DevToolsActivePort` connection metadata and connects through the Chrome DevTools Protocol (CDP). It opens the export tab in Chrome's existing default browser context, which shares your signed-in session.
 
 ### Export flow
 
