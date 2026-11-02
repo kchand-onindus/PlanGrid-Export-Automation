@@ -4,6 +4,7 @@ import '../utils/env.js';
 import { ENV_KEYS, TIMEOUTS, URLS } from '../utils/constants.js';
 
 export const platformUrl = process.env.PLATFORM_URL ?? URLS.planGridLanding;
+export const connectChrome = process.argv.includes('--connect-chrome');
 
 // Resolve paths from the repository location, not from wherever the command is launched.
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');

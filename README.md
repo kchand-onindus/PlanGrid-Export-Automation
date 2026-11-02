@@ -6,7 +6,7 @@ This repository contains a two-part automation workflow. Part A downloads projec
 
 | Part | Status | Current capabilities | Commands |
 | --- | --- | --- | --- |
-| Part A — PlanGrid export | Available | Logs in, processes enabled projects, creates or finds As-built exports, downloads ZIP files, and logs out. | `npm run export`, `npm run headless` |
+| Part A — PlanGrid export | Available | Uses automated login or an existing Chrome session; processes enabled projects; creates or finds As-built exports; and downloads ZIP files. Chrome mode retains authentication; automated mode logs out. | `npm run export`, `npm run export:chrome`, `npm run headless` |
 | Part B — Kahua import | **In development** | Prepares one configured project's drawing files, validates the preparation plan, and automates Kahua login through landing-page verification. Project selection and file upload are not implemented yet. | `npm run import:prepare`, `npm run test:import`, `npm run kahua` |
 
 ## Shared setup
@@ -41,6 +41,8 @@ DOWNLOAD_DIR=downloads
 
 `DOWNLOAD_DIR` may be a relative path, which is resolved inside this repository, or an absolute path. The password is never written to the logs.
 
+`PLANGRID_EMAIL` and `PLANGRID_PASSWORD` are required for automated login. Chrome session mode uses the browser's existing authentication and does not read or require those credentials. `PLATFORM_URL` controls the initial navigation in automated mode; Chrome mode opens the PlanGrid projects URL directly.
+
 ### Prepare the project input
 
 Update `input/projects.csv` with one project per row:
@@ -56,17 +58,108 @@ project_number,project_name,enabled,start_date,end_date
 
 ### Run commands
 
-Run the visible browser flow with:
+Complete the shared setup, configure `.env`, and prepare `input/projects.csv` first. Open a terminal in this repository's folder, then choose one mode below. Use the command for your operating system.
+
+| Mode | Authentication | Browser at the end |
+| --- | --- | --- |
+| [Normal automated login](#normal-automated-login) | Script enters email/password; you complete CAPTCHA/OTP when requested. | Attempts logout, pauses for your final check, then closes. |
+| [Existing Chrome session](#existing-chrome-session) | You sign in through regular Chrome before running the script. | Pauses for your final check, then disconnects; Chrome stays open and signed in. |
+| [Headless automated login](#headless-automated-login) | Uses the automated login flow without a visible browser. | Attempts logout and closes; no Inspector pauses. |
+
+#### Normal automated login
+
+**Before running:** Set `PLANGRID_EMAIL` and `PLANGRID_PASSWORD` in `.env`. Install Playwright's Chromium with `npm run install:browsers` during shared setup. You do not need to open Chrome or enable remote debugging for this mode.
+
+macOS/Linux:
 
 ```bash
 npm run export
 ```
 
-The browser is visible by default. An optional non-visible run is available with:
+Windows PowerShell:
+
+```powershell
+$env:HEADLESS = "false"
+npx tsx src/main.ts
+```
+
+1. The script opens a visible browser, navigates to `PLATFORM_URL`, and enters the email/password automatically.
+2. If Playwright Inspector pauses for Autodesk verification, complete the CAPTCHA/OTP in the browser and submit it. Wait for the PlanGrid projects page and project search box, then click Inspector's **Resume ▶** button.
+3. The script verifies authentication and exports the enabled projects.
+4. After exports, it attempts logout and pauses again. Check the browser, log out manually if necessary, then click **Resume ▶** to close it.
+
+#### Existing Chrome session
+
+**Before running:** Install regular Google Chrome 144 or newer separately. `npm run install:browsers` installs Playwright's Chromium, not the regular Chrome used by this mode. PlanGrid credentials in `.env` are not required for this mode.
+
+Set up Chrome on the machine that will run the script:
+
+1. Open **regular Chrome**, using the same OS user account that will run the script. Use a normal browser profile, rather than an Incognito window.
+2. Open `https://app.plangrid.com` and sign in manually. Complete any Autodesk CAPTCHA/OTP and reach the PlanGrid projects page.
+3. Open another Chrome tab. Paste **`chrome://inspect/#remote-debugging` into Chrome's address bar**, then press Enter.
+4. **Enable remote debugging on that page.** Keep Chrome running with this setting enabled.
+5. On macOS, if access to Chrome's connection metadata is denied, open **System Settings → Privacy & Security → Files & Folders**. Enable **Google Chrome** access for the terminal or host app running the script, then retry.
+
+Start the script from a terminal in the repository folder, choosing one command:
+
+macOS/Linux:
+
+```bash
+npm run export:chrome
+```
+
+Windows PowerShell:
+
+```powershell
+$env:HEADLESS = "false"
+npx tsx src/main.ts --connect-chrome
+```
+
+Then complete these steps for each run:
+
+1. Click **Allow** if Chrome asks to share its debugging session.
+2. The script opens a new export tab and navigates to `https://app.plangrid.com/projects`. Wait for the projects page and visible project search box.
+3. Click **Resume ▶** in **Playwright Inspector**, the separate window opened by the script. The script verifies the projects URL and search box before starting exports. If authentication is incomplete, no exports start.
+4. After exports, review the browser at the final pause and click **Resume ▶** again to disconnect. Chrome and its tabs remain open and signed in. The script also skips logout during failure cleanup.
+
+For later runs, keep Chrome running, keep remote debugging enabled, and reuse the same profile. You do not need to keep a PlanGrid tab open: the script opens the projects page itself. If the session expires, sign in through Chrome again before running. See [Chrome's connection instructions](https://developer.chrome.com/blog/chrome-devtools-mcp-debug-your-browser-session).
+
+#### Headless automated login
+
+**Before running:** Configure the same credentials and Playwright Chromium as normal automated login. This retained mode uses a fresh browser and does not reuse your signed-in Chrome session. It cannot handle manual CAPTCHA/OTP, and the current Autodesk handoff requires a visible browser. Use a visible mode when authentication requires interaction.
+
+macOS/Linux:
 
 ```bash
 npm run headless
 ```
+
+Windows PowerShell:
+
+```powershell
+$env:HEADLESS = "true"
+npx tsx src/main.ts
+```
+
+The script attempts automated login and exports without showing a browser or Inspector. If manual verification is required, it stops with an error. After processing, it attempts logout and closes the browser without a final manual pause.
+
+The npm wrappers use macOS/Linux environment-variable syntax, so use the explicit PowerShell commands above on native Windows.
+
+### Chrome connection settings and hosted machines
+
+The script reads only the `DevToolsActivePort` connection metadata from Chrome's standard user data directory and attaches through CDP. The export tab uses the existing default browser context and its authenticated session. Automatic logout is skipped even on failure. Only run one export script against the session at a time.
+
+For the standard Chrome setup above, leave the following optional `.env` settings unset so the script discovers the connection automatically. Use them only for a custom Chrome data directory or an existing explicit debugging endpoint:
+
+```env
+PLANGRID_CHROME_USER_DATA_DIR=/absolute/path/to/chrome/user-data-directory
+# Alternatively, supply an existing local CDP endpoint for a browser with a debugging port:
+PLANGRID_CDP_URL=http://127.0.0.1:9222
+```
+
+The user data directory setting is used only to find connection metadata; it does not launch, copy, or modify that profile. Do not share debugging WebSocket endpoints. On macOS, if reading the connection metadata is denied, allow the terminal or host app access to Google Chrome in System Settings → Privacy & Security → Files & Folders. Older Chrome versions require an already-enabled debugging endpoint in a separate user data directory; the command does not restart Chrome or add debugging flags automatically.
+
+For a hosted machine, use a persistent desktop session accessible through Remote Desktop or VNC, and run Chrome and the script together under the same OS user. Authenticate in that machine's Chrome; your laptop's session is not transferred by deploying the repository. Keep the browser profile, output directory, and logs on persistent storage. Chrome session mode currently requires connection approval when prompted and the Inspector Resume steps; it is not an unattended scheduled workflow.
 
 ### Export flow
 

@@ -8,6 +8,7 @@
   },
   "scripts": {
     "export": "HEADLESS=false tsx src/main.ts",
+    "export:chrome": "HEADLESS=false tsx src/main.ts --connect-chrome",
     "headless": "HEADLESS=true tsx src/main.ts",
     "import:prepare": "tsx src/import/main.ts",
     "kahua": "tsx src/kahua/main.ts",

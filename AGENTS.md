@@ -14,13 +14,13 @@ This repository contains two related automation parts.
 
 The working export application uses Playwright to:
 
-1. Open PlanGrid and hand off authentication to Autodesk.
-2. Complete the automated email/password steps.
+1. Launch a fresh browser for automated login, or attach to an already-running authenticated Chrome session.
+2. In automated mode, open PlanGrid, hand off authentication to Autodesk, and complete the email/password steps.
 3. Pause for manual Autodesk CAPTCHA, OTP, or other verification when required.
 4. Verify the authenticated PlanGrid projects page before continuing.
 5. Find enabled projects from `input/projects.csv`.
 6. Create or locate As-built exports, wait for completion, and download ZIP files.
-7. Attempt logout and preserve a final visible-browser verification pause.
+7. Preserve a final visible-browser verification pause. Automated mode attempts logout and closes its browser; Chrome session mode skips logout and disconnects while leaving Chrome open and signed in.
 
 ### Part B — Kahua import (in development)
 
@@ -39,6 +39,7 @@ CAPTCHA and OTP solving must remain manual in either workflow. Do not add CAPTCH
 
 - `src/main.ts`: application orchestration, browser lifecycle, project loop, cleanup, and exit status.
 - `src/auth.ts`: PlanGrid/Autodesk login, manual verification pause, authenticated-projects validation, and logout.
+- `src/chrome-session.ts`: CDP attachment to existing Chrome using debugging connection metadata or an explicit endpoint; does not launch Chrome or read credentials/cookies.
 - `src/project-exporter.ts`: project search, project navigation, As-built export handling, progress polling, and ZIP download.
 - `src/csv.ts`: project CSV parsing and validation.
 - `src/logger.ts`: timestamped console/file logging and duplicate-error tracking.
@@ -69,11 +70,23 @@ Run the normal visible flow:
 npm run export
 ```
 
+Attach to already-running Chrome after signing in to PlanGrid and enabling remote debugging:
+
+```bash
+npm run export:chrome
+```
+
+Part A supports automated login and existing Chrome sessions. Do not reintroduce the removed standalone manual-login mode. CAPTCHA and OTP verification remain manual when requested by Autodesk.
+
 Run headless mode only when no manual authentication is needed:
 
 ```bash
 npm run headless
 ```
+
+Headless mode uses the automated login flow and does not reuse an attached Chrome session. The npm export commands use macOS/Linux environment-variable syntax. For Windows PowerShell, set `$env:HEADLESS = "false"` and run `npx tsx src/main.ts` for automated login or `npx tsx src/main.ts --connect-chrome` for Chrome session mode. Set `$env:HEADLESS = "true"` for headless automated login. See `README.md` for setup and platform-specific commands.
+
+Keep the README's instructions for all three modes explicit and self-contained: include prerequisites, macOS/Linux and Windows PowerShell commands, required user actions, and the end-of-run browser behavior. Chrome instructions must tell the user to paste `chrome://inspect/#remote-debugging` into Chrome's address bar, enable remote debugging, accept the Allow prompt, and click Resume in Playwright Inspector after the projects page and search box appear. Distinguish the Chrome Allow prompt from the Inspector Resume button, and retain the macOS Files & Folders permission steps. Do not replace these setup instructions with command names alone.
 
 Run the current Part B local preparation and its tests:
 
@@ -98,12 +111,19 @@ There is no automated test suite for Part A or the Kahua browser flow. Part B's 
 
 ## Configuration and sensitive data
 
-The repository `.env` must provide:
+Automated PlanGrid login requires these repository `.env` credentials:
 
 - `PLANGRID_EMAIL`
 - `PLANGRID_PASSWORD`
-- `PLATFORM_URL` (defaults to `https://app.plangrid.com`)
+
+Shared optional configuration:
+
+- `PLATFORM_URL` (defaults to `https://app.plangrid.com`; initial navigation for automated login only)
 - `DOWNLOAD_DIR` (defaults to `downloads`)
+- `PLANGRID_CHROME_USER_DATA_DIR` (Chrome mode only; overrides the directory used to locate `DevToolsActivePort`)
+- `PLANGRID_CDP_URL` (Chrome mode only; overrides automatic discovery with an existing CDP endpoint)
+
+Chrome session mode does not read or require PlanGrid credentials from `.env`. Debugging WebSocket endpoints are sensitive connection data and must not be logged or committed.
 
 The Part B Kahua browser command additionally requires:
 
@@ -115,7 +135,7 @@ Never print, commit, or include passwords, OTPs, cookies, session data, or other
 
 ## Authentication behavior
 
-### Part A — PlanGrid and Autodesk
+### Part A — Automated PlanGrid and Autodesk login
 
 The visible flow may navigate from PlanGrid to `signin.autodesk.com`. After Autodesk password submission, the script may wait for:
 
@@ -125,6 +145,14 @@ The visible flow may navigate from PlanGrid to `signin.autodesk.com`. After Auto
 After manual verification, the user must complete the challenge, submit it, wait until the PlanGrid projects page and `input[name="project_search"]` are visible, then click Resume in the Playwright window. `src/auth.ts` validates both the URL and search field before the export loop starts. If Resume is clicked too early, the run should fail with an authentication error rather than attempting project work.
 
 Keep selectors in `utils/constants.ts`; keep authentication state checks in `src/auth.ts`. Do not rely on a fixed delay as proof that login succeeded.
+
+### Part A — Existing Chrome session
+
+`npm run export:chrome` attaches through CDP to regular Chrome that the user has already opened and authenticated. On Chrome 144 or newer, the user enables remote debugging at `chrome://inspect/#remote-debugging` and accepts Chrome's connection prompt. Run the script as the same OS user as Chrome. On macOS, accessing the connection metadata may require Google Chrome access for the terminal or host app under Privacy & Security > Files & Folders.
+
+The script opens a new export tab in the existing default browser context and navigates to the projects page; an existing PlanGrid tab does not need to remain open. `verifyAttachedChromeSession` in `src/auth.ts` pauses for Resume, then validates the projects URL and visible search field before exports. Preserve this verification and the final visible pause. Skip automatic logout both after exports and during failure cleanup. Closing the CDP connection must disconnect without closing the user's Chrome or its tabs.
+
+For hosted execution, Chrome and the script should run together in a persistent interactive desktop session. Authentication must be established on that machine, and session expiration requires user reauthentication. The current connection approval and Inspector pauses mean this mode is not an unattended scheduled workflow. Never read or copy browser cookies or credentials to establish the connection.
 
 ### Part B — Kahua
 

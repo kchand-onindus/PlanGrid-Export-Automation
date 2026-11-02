@@ -19,7 +19,8 @@ export type LoginResult =
 async function waitForAuthenticatedProjects(page: Page, timeoutMs: number): Promise<void> {
   const projectsUrl = new URL(URLS.projects);
   const isProjectsUrl = (url: URL): boolean =>
-    url.hostname === projectsUrl.hostname && url.pathname.startsWith(projectsUrl.pathname);
+    url.origin === projectsUrl.origin &&
+    (url.pathname === projectsUrl.pathname || url.pathname.startsWith(`${projectsUrl.pathname}/`));
 
   if (!isProjectsUrl(new URL(page.url()))) {
     await page.waitForURL(isProjectsUrl, { timeout: timeoutMs });
@@ -28,6 +29,30 @@ async function waitForAuthenticatedProjects(page: Page, timeoutMs: number): Prom
     state: 'visible',
     timeout: timeoutMs,
   });
+  if (!isProjectsUrl(new URL(page.url()))) {
+    throw new Error('The browser left the authenticated PlanGrid projects page.');
+  }
+}
+
+export async function verifyAttachedChromeSession(page: Page): Promise<LoginResult> {
+  logger.warn('Attached Chrome paused before exports', {
+    instruction:
+      'Confirm the PlanGrid projects page and project search box are visible in the export tab, then click Resume in Playwright Inspector to start exports. Complete login in Chrome first if required.',
+    expectedUrl: URLS.projects,
+  });
+
+  await page.pause();
+
+  try {
+    await waitForAuthenticatedProjects(page, TIMEOUTS.navigationMs);
+  } catch {
+    throw new Error(
+      'The existing Chrome session could not be verified after Resume. Sign in to PlanGrid and wait for the projects page and visible project search box before resuming. No exports were started.',
+    );
+  }
+
+  logger.success('Authenticated PlanGrid projects page verified in attached Chrome');
+  return 'ACTIVE_SESSION';
 }
 
 async function waitForManualVerification(page: Page, flowName: string): Promise<void> {
