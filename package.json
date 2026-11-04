@@ -7,11 +7,16 @@
     "node": ">=22.2.0"
   },
   "scripts": {
-    "export": "tsx src/run-export.ts",
     "export:chrome": "tsx src/run-export.ts --connect-chrome",
+    "unzip": "tsx src/unzip-main.ts",
+    "sync:prepare": "tsx src/sync/main.ts",
+    "export": "tsx src/run-export.ts",
     "headless": "tsx src/run-export.ts --headless",
     "import:prepare": "tsx src/import/main.ts",
     "kahua": "tsx src/kahua/main.ts",
+    "test:export": "tsx --test src/csv.test.ts src/project-exporter.test.ts",
+    "test:unzip": "tsx --test src/unzip.test.ts",
+    "test:sync": "tsx --test src/sync/preparation.test.ts",
     "test:import": "tsx --test src/import/preparation.test.ts",
     "install:browsers": "playwright install chromium"
   },

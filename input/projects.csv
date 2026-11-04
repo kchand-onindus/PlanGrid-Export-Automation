@@ -1,3 +1,4 @@
-project_number,project_name,enabled,start_date,end_date
-,Grainger 101410.01 ROW Plans,true,,
-,CNY188 - 124154.00 - Chester,false,,
+project_uid,project_name,project_clean_name,enabled,start_date,end_date
+,Grainger 101410.01 ROW Plans,Grainger_101410_01_ROW_Plans,false,,
+,CNY188 - 124154.00 - Chester,CNY188_124154_00_Chester,false,,
+d3a2d050-a020-6ce1-88f0-a1b357d7f941,DB2505 - I-24 at Epps Mill/Buchanan Road,DB2505 - I-24 at Epps Mill_Buchanan Road,true,,

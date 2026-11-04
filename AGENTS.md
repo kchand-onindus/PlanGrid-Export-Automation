@@ -42,6 +42,8 @@ CAPTCHA and OTP solving must remain manual in either workflow. Do not add CAPTCH
 - `src/chrome-session.ts`: CDP attachment to existing Chrome using debugging connection metadata or an explicit endpoint; does not launch Chrome or read credentials/cookies.
 - `src/project-exporter.ts`: project search, project navigation, As-built export handling, progress polling, and ZIP download.
 - `src/csv.ts`: project CSV parsing and validation.
+- `src/unzip.ts` and `src/unzip-main.ts`: separate CSV-driven, local ZIP extraction into each project's download folder.
+- `src/sync/`: CSV-driven local Documents/Photos copying into configurable sync staging, plus temporary-folder tests.
 - `src/logger.ts`: timestamped console/file logging and duplicate-error tracking.
 - `src/config.ts`: repository-relative paths and environment-derived configuration.
 - `src/types.ts`: project and export result types.
@@ -53,9 +55,38 @@ CAPTCHA and OTP solving must remain manual in either workflow. Do not add CAPTCH
 - `input/projects.csv`: project input data.
 - `input/version_sets.csv`: Part B drawing-version metadata and upload ordering.
 - `downloads/`: downloaded ZIP output; preserve `.gitkeep` and do not commit generated exports.
+- `sync_ups/`: default local sync staging output; preserve `.gitkeep` and do not commit copied contents.
 - `logs/`: generated run logs; preserve `.gitkeep` and do not treat logs as source code.
 
 ## Commands and validation
+
+The main workflow is Chrome export → unzip → local sync preparation. Complete the shared setup and input/environment configuration first. Keep these three commands in this order in the README and npm script listing. Put the other workflows and validation commands under Miscellaneous in the README; do not add a duplicate Chrome command banner at the top. Show each workflow's command immediately after its heading.
+
+### Chrome export — main workflow
+
+```bash
+npm run export:chrome
+```
+
+Sign in to PlanGrid in regular Chrome, paste `chrome://inspect/#remote-debugging` into Chrome's address bar, and enable remote debugging before running. Accept Chrome's **Allow** prompt when shown, wait for the projects page and search box, then click **Resume ▶** in Playwright Inspector. Preserve the final Inspector pause and leave Chrome open and signed in after disconnecting.
+
+### Extract downloaded ZIPs
+
+```bash
+npm run unzip
+```
+
+Run after exports complete. This local step does not launch a browser.
+
+### Prepare local Documents/Photos staging
+
+```bash
+npm run sync:prepare
+```
+
+Run after successful extraction. Read from `DOWNLOAD_DIR` and copy to `SYNC_UP_DIR`; this does not perform an external sync or upload.
+
+### Miscellaneous commands
 
 Install dependencies and Chromium:
 
@@ -64,50 +95,35 @@ npm install
 npm run install:browsers
 ```
 
-Run the normal visible flow:
+Alternative automated-login modes:
 
 ```bash
 npm run export
-```
-
-Attach to already-running Chrome after signing in to PlanGrid and enabling remote debugging:
-
-```bash
-npm run export:chrome
-```
-
-Part A supports automated login and existing Chrome sessions. Do not reintroduce the removed standalone manual-login mode. CAPTCHA and OTP verification remain manual when requested by Autodesk.
-
-Run headless mode only when no manual authentication is needed:
-
-```bash
 npm run headless
 ```
 
-Headless mode uses the automated login flow and does not reuse an attached Chrome session. All three npm export commands work on macOS/Linux and Windows Command Prompt or PowerShell. They use `src/run-export.ts` to set `HEADLESS` inside Node.js before loading the application. See `README.md` for setup and platform-specific commands.
+Part A supports automated login and existing Chrome sessions. Do not reintroduce the removed standalone manual-login mode. CAPTCHA and OTP verification remain manual when requested by Autodesk. Headless mode uses automated login and does not reuse an attached Chrome session; use it only when manual authentication is not needed.
 
-Keep the README's instructions for all three modes explicit and self-contained: include prerequisites, macOS/Linux and Windows PowerShell commands, required user actions, and the end-of-run browser behavior. Chrome instructions must tell the user to paste `chrome://inspect/#remote-debugging` into Chrome's address bar, enable remote debugging, accept the Allow prompt, and click Resume in Playwright Inspector after the projects page and search box appear. Distinguish the Chrome Allow prompt from the Inspector Resume button, and retain the macOS Files & Folders permission steps. Do not replace these setup instructions with command names alone.
+All three npm export commands work on macOS/Linux and Windows Command Prompt or PowerShell. They use `src/run-export.ts` to set `HEADLESS` inside Node.js before loading the application. Keep the README's instructions for all three modes explicit and self-contained: include prerequisites, applicable macOS/Linux and Windows Command Prompt/PowerShell commands, required user actions, and the end-of-run browser behavior. Distinguish Chrome's Allow prompt from Inspector's Resume button, and retain the macOS Files & Folders permission steps. Do not replace these setup instructions with command names alone.
 
-Run the current Part B local preparation and its tests:
+Run the current Part B local preparation or visible Kahua login flow:
 
 ```bash
 npm run import:prepare
-npm run test:import
-```
-
-Run the current visible Kahua login flow:
-
-```bash
 npm run kahua
 ```
 
-Type-check changes with:
+Validate changes with the TypeScript check and smallest relevant test set:
 
 ```bash
 npm exec tsc -- --noEmit
+npm run test:export
+npm run test:unzip
+npm run test:sync
+npm run test:import
 ```
 
-There is no automated test suite for Part A or the Kahua browser flow. Part B's local preparation tests run with `npm run test:import`. For code changes, run the TypeScript check and use the smallest relevant validation available; do not launch a real login/export run unless the user requests it or it is clearly part of the task.
+The tests cover project CSV validation, simulated download naming, temporary ZIP extraction, temporary Documents/Photos copying, and Part B local preparation. There is no automated test suite for the real Part A or Kahua browser flow. Do not launch a real login/export run unless requested or clearly part of the task. Do not run unzip or sync preparation on real downloads merely to validate changes.
 
 ## Configuration and sensitive data
 
@@ -116,10 +132,13 @@ Automated PlanGrid login requires these repository `.env` credentials:
 - `PLANGRID_EMAIL`
 - `PLANGRID_PASSWORD`
 
+Document `DOWNLOAD_DIR` and `SYNC_UP_DIR` together in the README's environment setup, with repository-relative defaults and Windows/macOS absolute-path examples. `.env.example` is the sample; local `.env` values may be customized and must not be replaced with sample credentials or defaults during updates. Check for missing keys without printing secrets.
+
 Shared optional configuration:
 
 - `PLATFORM_URL` (defaults to `https://app.plangrid.com`; initial navigation for automated login only)
 - `DOWNLOAD_DIR` (defaults to `downloads`)
+- `SYNC_UP_DIR` (defaults to `sync_ups`; local Documents/Photos staging root, with relative paths resolved from the repository)
 - `PLANGRID_CHROME_USER_DATA_DIR` (Chrome mode only; overrides the directory used to locate `DevToolsActivePort`)
 - `PLANGRID_CDP_URL` (Chrome mode only; overrides automatic discovery with an existing CDP endpoint)
 
@@ -162,11 +181,17 @@ After navigation commits, readiness must be determined from the Uno canvas and s
 
 ## Input and output conventions
 
-`input/projects.csv` requires `project_name` and `enabled`. `enabled` must be `true` or `false`; optional dates must use `YYYY-MM-DD`. Project names are also used to derive sanitized download directory names.
+`input/projects.csv` uses `project_uid,project_name,project_clean_name,enabled,start_date,end_date`. The first four columns are required; UID values and dates may be blank. `enabled` must be `true` or `false`; optional dates must use `YYYY-MM-DD`. `project_name` is used for PlanGrid search. `project_clean_name` is a required, validated folder/file base name used directly for `<DOWNLOAD_DIR>/<project_clean_name>/<project_clean_name>.zip`; do not derive names from `project_name` or use the platform-suggested ZIP filename. Reject unsafe names and duplicate clean names among enabled projects before browser startup.
+
+`npm run unzip` reads that same CSV, skips disabled projects, and extracts each matching ZIP into a parent named `project_clean_name` next to the source ZIP: `<DOWNLOAD_DIR>/<project_clean_name>/<project_clean_name>/`. Retain the source ZIP and all internal directory structure, including archive wrapper directories. Reject unsafe paths, links, archive collisions, and existing-file conflicts; never overwrite existing files. Report per-project failures, continue with other projects, and exit nonzero if any project fails. Local Documents/Photos staging is a separate command described below.
+
+Use `project_clean_name` to locate the project folder/source ZIP and name the extraction parent. Preserve internal archive names and structure exactly, including trailing spaces and periods; do not add filename cleanup or renaming. Report names unsupported by the host filesystem as failures. Detect filename case sensitivity using the existing ZIP; preserve case-distinct entries on capable filesystems and report both conflicting paths on case-insensitive filesystems. Retain path-containment, link, collision, and overwrite protections.
+
+`npm run sync:prepare` uses the same CSV and extraction parent. For each enabled row, copy Documents and/or Photos (when present) with their full subtrees into `<SYNC_UP_DIR>/<project_clean_name>/`. Check the extraction parent directly first; if neither folder exists there, support a single project wrapper one level below, rejecting multiple matching wrappers. Skip projects with neither folder; missing extraction roots fail that project. Preserve sources and existing destination files, reject links/special files and overlapping source/destination trees, and continue with other projects after failures. This is local staging only; actual syncing/uploading is not implemented. Test with `npm run test:sync`; do not copy real downloads merely to validate changes.
 
 Part B reads `input/version_sets.csv` and currently prepares only the project pinned in `src/import/config.ts`. Preparation output belongs under `<DOWNLOAD_DIR>/import-preparation/`; Kahua upload output does not exist yet because upload automation is still in development.
 
-Generated files belong under the configured download directory. Run logs are written under `logs/` with UTC timestamps. Avoid committing generated downloads, logs, browser profiles, or local `.env` files.
+Generated exports and preparation files belong under the configured download directory; local sync staging belongs under `SYNC_UP_DIR`. Run logs are written under `logs/` with UTC timestamps. Avoid committing generated downloads, staged sync contents, logs, browser profiles, or local `.env` files.
 
 ## Change expectations
 

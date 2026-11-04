@@ -6,20 +6,6 @@ import { logError, logger } from './logger.js';
 import { PROJECT_SELECTORS, URLS } from '../utils/constants.js';
 import type { Project, ProjectResult } from './types.js';
 
-function safeFolderName(project: Project): string {
-  const source = project.projectName.trim() || 'unknown-project';
-  const cleaned = source
-    .normalize('NFKC')
-    .replace(/[^\p{L}\p{N}]+/gu, '_')
-    .replace(/^_+|_+$/g, '');
-  const folderName = cleaned || 'unknown-project';
-
-  // Avoid Windows-reserved folder names if the configured download directory is shared.
-  return /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(folderName)
-    ? `_${folderName}`
-    : folderName;
-}
-
 async function selectProject(page: Page, project: Project): Promise<boolean> {
   const searchTerm = project.projectName;
   const searchInput = page.locator(PROJECT_SELECTORS.searchInput);
@@ -68,7 +54,7 @@ async function waitForAsBuiltDownload(page: Page, project: Project, downloadDire
 
   let lastProgress = '';
   logger.info('Waiting for As-built export to reach 100%; no time limit is applied', {
-    projectNumber: project.projectNumber,
+    projectUid: project.projectUid,
     pollIntervalMs: timeouts.progressPollMs,
   });
 
@@ -80,7 +66,7 @@ async function waitForAsBuiltDownload(page: Page, project: Project, downloadDire
 
     if (progress !== lastProgress) {
       logger.info('As-built export status', {
-        projectNumber: project.projectNumber,
+        projectUid: project.projectUid,
         progress,
         status,
         downloadVisible,
@@ -90,14 +76,14 @@ async function waitForAsBuiltDownload(page: Page, project: Project, downloadDire
 
     if (progress === '100%' && downloadVisible) {
       logger.success('As-built export is ready for download', {
-        projectNumber: project.projectNumber,
+        projectUid: project.projectUid,
         progress,
       });
 
       const downloadPromise = page.waitForEvent('download');
       await downloadLink.click();
       const download = await downloadPromise;
-      const filename = download.suggestedFilename() || `${safeFolderName(project)}.zip`;
+      const filename = `${project.projectCleanName}.zip`;
       const destination = path.join(downloadDirectory, filename);
       await download.saveAs(destination);
       return destination;
@@ -118,18 +104,18 @@ export async function exportProject(
 
   if (!project.enabled) {
     logger.info('Skipping disabled project', {
-      projectNumber: project.projectNumber,
+      projectUid: project.projectUid,
       projectName: project.projectName,
     });
     return { project, status: 'SKIPPED', message: 'Project is disabled', durationMs: 0 };
   }
 
-  const downloadDirectory = path.join(downloadRoot, safeFolderName(project));
+  const downloadDirectory = path.join(downloadRoot, project.projectCleanName);
 
   try {
     await fs.mkdir(downloadDirectory, { recursive: true });
     logger.debug('Download directory ready', {
-      projectNumber: project.projectNumber,
+      projectUid: project.projectUid,
       downloadDirectory,
     });
 
@@ -192,7 +178,7 @@ export async function exportProject(
     }
 
     const savedFile = await waitForAsBuiltDownload(page, project, downloadDirectory);
-    logger.success('As-built ZIP saved', { projectNumber: project.projectNumber, savedFile });
+    logger.success('As-built ZIP saved', { projectUid: project.projectUid, savedFile });
     return {
       project,
       status: 'SUCCESS',
@@ -201,7 +187,7 @@ export async function exportProject(
       durationMs: Date.now() - startedAt,
     };
   } catch (error) {
-    logError(`Project ${project.projectNumber} failed`, error, {
+    logError(`Project ${project.projectUid || project.projectName} failed`, error, {
       projectName: project.projectName,
       startDate: project.startDate,
       endDate: project.endDate,

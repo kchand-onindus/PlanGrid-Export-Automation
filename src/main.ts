@@ -68,8 +68,9 @@ async function main(): Promise<void> {
     const results = [];
     for (const [index, project] of projects.entries()) {
       logger.info('Processing project', {
-        projectNumber: project.projectNumber,
+        projectUid: project.projectUid,
         projectName: project.projectName,
+        projectCleanName: project.projectCleanName,
         position: index + 1,
         total: projects.length,
       });
@@ -77,8 +78,9 @@ async function main(): Promise<void> {
       results.push(result);
 
       const resultLog = {
-        projectNumber: project.projectNumber,
+        projectUid: project.projectUid,
         projectName: project.projectName,
+        projectCleanName: project.projectCleanName,
         status: result.status,
         durationMs: result.durationMs,
         message: result.message,

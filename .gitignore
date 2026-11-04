@@ -2,6 +2,8 @@ node_modules/
 dist/
 downloads/*
 !downloads/.gitkeep
+sync_ups/*
+!sync_ups/.gitkeep
 logs/*
 !logs/.gitkeep
 .env

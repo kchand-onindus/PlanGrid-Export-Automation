@@ -10,6 +10,7 @@ export const ENV_KEYS = {
   password: 'PLANGRID_PASSWORD',
   platformUrl: 'PLATFORM_URL',
   downloadDir: 'DOWNLOAD_DIR',
+  syncUpDir: 'SYNC_UP_DIR',
   planGridCdpUrl: 'PLANGRID_CDP_URL',
   chromeUserDataDir: 'PLANGRID_CHROME_USER_DATA_DIR',
   kahuaUsername: 'KAHUA_USERNAME',

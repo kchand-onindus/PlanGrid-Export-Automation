@@ -1,6 +1,7 @@
 export interface Project {
-  projectNumber: string;
+  projectUid: string;
   projectName: string;
+  projectCleanName: string;
   enabled: boolean;
   startDate?: string;
   endDate?: string;

@@ -14,6 +14,9 @@ export const paths = {
   downloadRoot: path.isAbsolute(process.env[ENV_KEYS.downloadDir] ?? '')
     ? process.env[ENV_KEYS.downloadDir]!
     : path.resolve(projectRoot, process.env[ENV_KEYS.downloadDir] ?? 'downloads'),
+  syncUpRoot: path.isAbsolute(process.env[ENV_KEYS.syncUpDir] ?? '')
+    ? process.env[ENV_KEYS.syncUpDir]!
+    : path.resolve(projectRoot, process.env[ENV_KEYS.syncUpDir] ?? 'sync_ups'),
   logRoot: path.join(projectRoot, 'logs'),
 };
 
