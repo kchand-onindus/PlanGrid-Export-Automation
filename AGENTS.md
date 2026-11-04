@@ -84,7 +84,7 @@ Run headless mode only when no manual authentication is needed:
 npm run headless
 ```
 
-Headless mode uses the automated login flow and does not reuse an attached Chrome session. The npm export commands use macOS/Linux environment-variable syntax. For Windows PowerShell, set `$env:HEADLESS = "false"` and run `npx tsx src/main.ts` for automated login or `npx tsx src/main.ts --connect-chrome` for Chrome session mode. Set `$env:HEADLESS = "true"` for headless automated login. See `README.md` for setup and platform-specific commands.
+Headless mode uses the automated login flow and does not reuse an attached Chrome session. All three npm export commands work on macOS/Linux and Windows Command Prompt or PowerShell. They use `src/run-export.ts` to set `HEADLESS` inside Node.js before loading the application. See `README.md` for setup and platform-specific commands.
 
 Keep the README's instructions for all three modes explicit and self-contained: include prerequisites, macOS/Linux and Windows PowerShell commands, required user actions, and the end-of-run browser behavior. Chrome instructions must tell the user to paste `chrome://inspect/#remote-debugging` into Chrome's address bar, enable remote debugging, accept the Allow prompt, and click Resume in Playwright Inspector after the projects page and search box appear. Distinguish the Chrome Allow prompt from the Inspector Resume button, and retain the macOS Files & Folders permission steps. Do not replace these setup instructions with command names alone.
 

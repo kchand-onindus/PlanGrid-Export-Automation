@@ -2,11 +2,30 @@
 
 This repository contains a two-part automation workflow. Part A downloads project exports from PlanGrid. Part B prepares those exports and will upload them to Kahua, but that workflow is still under development.
 
+## Main command for regular use
+
+**Use the existing Chrome session for routine PlanGrid downloads:**
+
+```bash
+npm run export:chrome
+```
+
+This command works on **Windows Command Prompt, Windows PowerShell, macOS, and Linux**. Run it from the repository folder.
+
+**First-time setup:** Complete [Shared setup](#shared-setup), prepare [the project input](#prepare-the-project-input), and follow the [Chrome setup instructions](#existing-chrome-session), including enabling remote debugging. PlanGrid credentials in `.env` are not required for this mode; configure `DOWNLOAD_DIR` there if you need a custom download location.
+
+For each run:
+
+1. Keep regular Chrome open, signed in to PlanGrid, with remote debugging enabled.
+2. Run `npm run export:chrome` and click **Allow** if Chrome asks to share its debugging session.
+3. Wait for the PlanGrid projects page and search box, then click **Resume ▶** in the separate **Playwright Inspector** window to start exports.
+4. At the final verification pause, review the browser and click **Resume ▶** again. Chrome stays open and signed in.
+
 ## Workflow overview
 
 | Part | Status | Current capabilities | Commands |
 | --- | --- | --- | --- |
-| Part A — PlanGrid export | Available | Uses automated login or an existing Chrome session; processes enabled projects; creates or finds As-built exports; and downloads ZIP files. Chrome mode retains authentication; automated mode logs out. | `npm run export`, `npm run export:chrome`, `npm run headless` |
+| Part A — PlanGrid export | Available | Uses automated login or an existing Chrome session; processes enabled projects; creates or finds As-built exports; and downloads ZIP files. Chrome mode retains authentication; automated mode logs out. | **Main: `npm run export:chrome`**. Alternatives: `npm run export`, `npm run headless`. |
 | Part B — Kahua import | **In development** | Prepares one configured project's drawing files, validates the preparation plan, and automates Kahua login through landing-page verification. Project selection and file upload are not implemented yet. | `npm run import:prepare`, `npm run test:import`, `npm run kahua` |
 
 ## Shared setup
@@ -58,13 +77,13 @@ project_number,project_name,enabled,start_date,end_date
 
 ### Run commands
 
-Complete the shared setup, configure `.env`, and prepare `input/projects.csv` first. Open a terminal in this repository's folder, then choose one mode below. Use the command for your operating system.
+Complete the shared setup and prepare `input/projects.csv` first. Configure `.env` as required by your chosen mode. Open a terminal in this repository's folder. **Use `npm run export:chrome` for regular downloads.** The npm commands work on macOS/Linux and Windows Command Prompt or PowerShell.
 
-| Mode | Authentication | Browser at the end |
-| --- | --- | --- |
-| [Normal automated login](#normal-automated-login) | Script enters email/password; you complete CAPTCHA/OTP when requested. | Attempts logout, pauses for your final check, then closes. |
-| [Existing Chrome session](#existing-chrome-session) | You sign in through regular Chrome before running the script. | Pauses for your final check, then disconnects; Chrome stays open and signed in. |
-| [Headless automated login](#headless-automated-login) | Uses the automated login flow without a visible browser. | Attempts logout and closes; no Inspector pauses. |
+| Mode | Command | Authentication | Browser at the end |
+| --- | --- | --- | --- |
+| **[Existing Chrome session — main workflow](#existing-chrome-session)** | **`npm run export:chrome`** | You sign in through regular Chrome before running the script. | Pauses for your final check, then disconnects; Chrome stays open and signed in. |
+| [Normal automated login](#normal-automated-login) | `npm run export` | Script enters email/password; you complete CAPTCHA/OTP when requested. | Attempts logout, pauses for your final check, then closes. |
+| [Headless automated login](#headless-automated-login) | `npm run headless` | Uses the automated login flow without a visible browser. | Attempts logout and closes; no Inspector pauses. |
 
 #### Normal automated login
 
@@ -76,11 +95,10 @@ macOS/Linux:
 npm run export
 ```
 
-Windows PowerShell:
+Windows Command Prompt or PowerShell:
 
 ```powershell
-$env:HEADLESS = "false"
-npx tsx src/main.ts
+npm run export
 ```
 
 1. The script opens a visible browser, navigates to `PLATFORM_URL`, and enters the email/password automatically.
@@ -89,6 +107,8 @@ npx tsx src/main.ts
 4. After exports, it attempts logout and pauses again. Check the browser, log out manually if necessary, then click **Resume ▶** to close it.
 
 #### Existing Chrome session
+
+**Main workflow for regular use: `npm run export:chrome`.**
 
 **Before running:** Install regular Google Chrome 144 or newer separately. `npm run install:browsers` installs Playwright's Chromium, not the regular Chrome used by this mode. PlanGrid credentials in `.env` are not required for this mode.
 
@@ -100,7 +120,7 @@ Set up Chrome on the machine that will run the script:
 4. **Enable remote debugging on that page.** Keep Chrome running with this setting enabled.
 5. On macOS, if access to Chrome's connection metadata is denied, open **System Settings → Privacy & Security → Files & Folders**. Enable **Google Chrome** access for the terminal or host app running the script, then retry.
 
-Start the script from a terminal in the repository folder, choosing one command:
+Start the script from a terminal in the repository folder:
 
 macOS/Linux:
 
@@ -108,11 +128,10 @@ macOS/Linux:
 npm run export:chrome
 ```
 
-Windows PowerShell:
+Windows Command Prompt or PowerShell:
 
 ```powershell
-$env:HEADLESS = "false"
-npx tsx src/main.ts --connect-chrome
+npm run export:chrome
 ```
 
 Then complete these steps for each run:
@@ -134,16 +153,15 @@ macOS/Linux:
 npm run headless
 ```
 
-Windows PowerShell:
+Windows Command Prompt or PowerShell:
 
 ```powershell
-$env:HEADLESS = "true"
-npx tsx src/main.ts
+npm run headless
 ```
 
 The script attempts automated login and exports without showing a browser or Inspector. If manual verification is required, it stops with an error. After processing, it attempts logout and closes the browser without a final manual pause.
 
-The npm wrappers use macOS/Linux environment-variable syntax, so use the explicit PowerShell commands above on native Windows.
+The npm commands set `HEADLESS` inside Node.js before loading the application, so no shell-specific environment-variable commands are needed. You can keep using Windows Command Prompt. To switch that session to Windows PowerShell, type `powershell` and press Enter; type `exit` to return to Command Prompt.
 
 ### Chrome connection notes
 

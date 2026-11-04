@@ -7,9 +7,9 @@
     "node": ">=22.2.0"
   },
   "scripts": {
-    "export": "HEADLESS=false tsx src/main.ts",
-    "export:chrome": "HEADLESS=false tsx src/main.ts --connect-chrome",
-    "headless": "HEADLESS=true tsx src/main.ts",
+    "export": "tsx src/run-export.ts",
+    "export:chrome": "tsx src/run-export.ts --connect-chrome",
+    "headless": "tsx src/run-export.ts --headless",
     "import:prepare": "tsx src/import/main.ts",
     "kahua": "tsx src/kahua/main.ts",
     "test:import": "tsx --test src/import/preparation.test.ts",
