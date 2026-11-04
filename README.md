@@ -96,19 +96,19 @@ Complete the shared setup, configure `.env`, and prepare `input/projects.csv` fi
 
 | Step | Command | Result |
 | --- | --- | --- |
-| 1. [Download through Chrome](#existing-chrome-session) | **`npm run export:chrome`** | Downloads ZIPs for enabled projects. |
-| 2. [Unzip](#extract-downloaded-zip-files) | **`npm run unzip`** | Extracts each ZIP into its clean-name parent folder. |
-| 3. [Prepare local sync folders](#prepare-documents-and-photos-for-syncing) | **`npm run sync:prepare`** | Copies Documents/Photos into `SYNC_UP_DIR/<project_clean_name>/`. |
+| 1. [Download through Chrome](#step-1-existing-chrome-session) | **`npm run export:chrome`** | Downloads ZIPs for enabled projects. |
+| 2. [Unzip](#step-2-extract-downloaded-zip-files) | **`npm run unzip`** | Extracts each ZIP into its clean-name parent folder. |
+| 3. [Prepare local sync folders](#step-3-prepare-documents-and-photos-for-syncing) | **`npm run sync:prepare`** | Copies Documents/Photos into `SYNC_UP_DIR/<project_clean_name>/`. |
 
 **Before the Chrome step, enable remote debugging at `chrome://inspect/#remote-debugging` and keep Chrome signed in to PlanGrid.** Alternative login modes, validation, and Part B commands are under [Miscellaneous](#miscellaneous).
 
-#### Existing Chrome session
+#### Step 1: Existing Chrome session
 
 ```bash
 npm run export:chrome
 ```
 
-**Step 1 — main download command. Enable remote debugging before running.** The command above is the same on macOS/Linux and Windows Command Prompt or PowerShell.
+**Main download command. Enable remote debugging before running.** The command above is the same on macOS/Linux and Windows Command Prompt or PowerShell.
 
 **Before running:** Install regular Google Chrome 144 or newer separately. `npm run install:browsers` installs Playwright's Chromium, not the regular Chrome used by this mode. PlanGrid credentials in `.env` are not required for this mode.
 
@@ -131,7 +131,7 @@ For later runs, keep Chrome running, keep remote debugging enabled, and reuse th
 
 ##### Chrome connection notes
 
-For the standard [Chrome setup above](#existing-chrome-session):
+For the standard [Chrome setup above](#step-1-existing-chrome-session):
 
 - Leave `PLANGRID_CHROME_USER_DATA_DIR` and `PLANGRID_CDP_URL` unset in `.env`; the script finds the connection automatically.
 - Run only one export script against the Chrome session at a time.
@@ -170,13 +170,13 @@ This mode still requires manual interaction and cannot currently run as an unatt
 
 The script reads Chrome's `DevToolsActivePort` connection metadata and connects through the Chrome DevTools Protocol (CDP). It opens the export tab in Chrome's existing default browser context, which shares your signed-in session.
 
-#### Extract downloaded ZIP files
+#### Step 2: Extract downloaded ZIP files
 
 ```bash
 npm run unzip
 ```
 
-**Step 2 — extract after downloading.** Run from the repository folder on **Windows Command Prompt, Windows PowerShell, macOS, or Linux**.
+**Extract after downloading.** Run from the repository folder on **Windows Command Prompt, Windows PowerShell, macOS, or Linux**.
 
 Install dependencies with `npm install` first. This local step does not require a browser, Playwright Chromium, or login credentials. It reads the same `input/projects.csv` and uses the same `DOWNLOAD_DIR` configuration (default: `downloads`).
 
@@ -201,13 +201,13 @@ Archives containing different files such as `9C.pdf` and `9c.pdf` in the same in
 
 The command logs per-project results and a final summary to the terminal and `logs/unzip-<timestamp>.log`. Temporary-fixture tests are listed under [Validation commands](#validation-commands).
 
-#### Prepare Documents and Photos for syncing
+#### Step 3: Prepare Documents and Photos for syncing
 
 ```bash
 npm run sync:prepare
 ```
 
-**Step 3 — copy after successful extraction.** Run from the repository folder on **Windows Command Prompt, Windows PowerShell, macOS, or Linux**.
+**Copy after successful extraction.** Run from the repository folder on **Windows Command Prompt, Windows PowerShell, macOS, or Linux**.
 
 This command copies local files only. It does not unzip archives, open a browser, upload files, or connect to a sync service. Install dependencies with `npm install` and use the same `input/projects.csv` and `DOWNLOAD_DIR` as the export/unzip steps. The earlier filename-conflict limitation still applies to extraction; this command does not resolve or retry it.
 
