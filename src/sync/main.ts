@@ -1,6 +1,7 @@
 import { paths } from '../config.js';
 import { createLogger } from '../logger.js';
 import { prepareSync } from './prepare.js';
+import { confirmSyncOverwrite } from './confirmation.js';
 
 async function main(): Promise<void> {
   const { logger, logFilePath } = createLogger('sync-preparation');
@@ -8,7 +9,7 @@ async function main(): Promise<void> {
     inputFile: paths.inputFile, downloadRoot: paths.downloadRoot, syncUpRoot: paths.syncUpRoot, logFile: logFilePath,
   });
   try {
-    const results = await prepareSync(paths.inputFile, paths.downloadRoot, paths.syncUpRoot, logger);
+    const results = await prepareSync(paths.inputFile, paths.downloadRoot, paths.syncUpRoot, logger, confirmSyncOverwrite);
     const failed = results.filter((result) => result.status === 'FAILED').length;
     logger.general('Local sync preparation completed', {
       total: results.length,

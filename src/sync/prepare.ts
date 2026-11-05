@@ -2,11 +2,19 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { readProjects } from '../csv.js';
 import type { Logger } from '../logger.js';
-import type { ProjectResult } from '../types.js';
+import type { Project, ProjectResult } from '../types.js';
 
 const folderNames = ['Documents', 'Photos'] as const;
 interface SourceFolder { name: typeof folderNames[number]; source: string }
-interface CopyItem { source: string; destination: string; directory: boolean }
+interface FileState { dev: number; ino: number; size: number; mtimeMs: number }
+interface CopyItem { source: string; destination: string; directory: boolean; previous?: FileState }
+
+export interface OverwriteRequest {
+  project: Project;
+  destination: string;
+  files: string[];
+}
+export type ConfirmOverwrite = (request: OverwriteRequest) => Promise<boolean>;
 
 async function statIfPresent(file: string) {
   try {
@@ -73,12 +81,45 @@ async function planCopy(source: string, destination: string, items: CopyItem[]):
   const directory = sourceStat.isDirectory();
   if (!directory && !sourceStat.isFile()) throw new Error(`Links and special files cannot be copied: ${source}`);
   const existing = await statIfPresent(destination);
-  if (existing && (!directory || !existing.isDirectory())) {
-    throw new Error(`Copy would overwrite an existing path or follow a link: ${destination}`);
+  if (existing && (directory ? !existing.isDirectory() : !existing.isFile())) {
+    throw new Error(`Copy destination has an incompatible file/directory type or link: ${destination}`);
   }
-  items.push({ source, destination, directory });
+  items.push({ source, destination, directory, previous: !directory && existing ? {
+    dev: existing.dev, ino: existing.ino, size: existing.size, mtimeMs: existing.mtimeMs,
+  } : undefined });
   if (directory) {
     for (const name of await fs.readdir(source)) await planCopy(path.join(source, name), path.join(destination, name), items);
+  }
+}
+
+async function checkDestination(item: CopyItem): Promise<void> {
+  const current = await statIfPresent(item.destination);
+  if (item.directory) {
+    if (current && !current.isDirectory()) throw new Error(`Sync destination changed to a file or link: ${item.destination}`);
+  } else if (item.previous) {
+    if (!current?.isFile() || current.dev !== item.previous.dev || current.ino !== item.previous.ino
+        || current.size !== item.previous.size || current.mtimeMs !== item.previous.mtimeMs) {
+      throw new Error(`Existing sync file changed after the overwrite preview; rerun to review it: ${item.destination}`);
+    }
+  } else if (current) {
+    throw new Error(`A new destination file appeared after the preview; rerun to review it: ${item.destination}`);
+  }
+}
+
+async function copyItem(item: CopyItem): Promise<void> {
+  if (!item.previous) {
+    await fs.copyFile(item.source, item.destination, fs.constants.COPYFILE_EXCL);
+    return;
+  }
+  // Finish the incoming copy before replacing an approved destination file.
+  const temporary = await fs.mkdtemp(path.join(path.dirname(item.destination), '.sync-copy-'));
+  try {
+    const staged = path.join(temporary, 'incoming');
+    await fs.copyFile(item.source, staged, fs.constants.COPYFILE_EXCL);
+    await checkDestination(item);
+    await fs.rename(staged, item.destination);
+  } finally {
+    await fs.rm(temporary, { recursive: true, force: true });
   }
 }
 
@@ -87,6 +128,7 @@ export async function prepareSync(
   downloadRoot: string,
   syncUpRoot: string,
   logger: Logger,
+  confirmOverwrite?: ConfirmOverwrite,
 ): Promise<ProjectResult[]> {
   const projects = await readProjects(inputFile);
   const results: ProjectResult[] = [];
@@ -120,15 +162,30 @@ export async function prepareSync(
       if (existing && !existing.isDirectory()) throw new Error(`Sync project folder must be a directory, not a file or link: ${destination}`);
       const items: CopyItem[] = [];
       for (const folder of folders) await planCopy(folder.source, path.join(destination, folder.name), items);
+      const overwritten = items.filter((item) => item.previous);
+      if (overwritten.length) {
+        logger.warn('Existing sync files require overwrite confirmation', { ...context, existingFileCount: overwritten.length });
+        if (!confirmOverwrite) throw new Error('Existing sync files require overwrite approval; run npm run sync:prepare in an interactive terminal');
+        const approved = await confirmOverwrite({ project, destination, files: overwritten.map((item) => item.destination) });
+        if (!approved) {
+          logger.info('Overwrite declined; project skipped without changes', context);
+          results.push({ project, status: 'SKIPPED', message: 'Overwrite declined; destination unchanged', durationMs: Date.now() - startedAt });
+          continue;
+        }
+        logger.info('Overwrite approved for existing sync files', { ...context, existingFileCount: overwritten.length });
+      }
+      // Recheck the preview before making changes, especially after waiting for input.
+      for (const item of items) await checkDestination(item);
 
       logger.info('Copying project Documents/Photos to local sync staging', { ...context, folders: folders.map((folder) => folder.name) });
       await fs.mkdir(destination, { recursive: true });
       for (const item of items) {
         if (item.directory) await fs.mkdir(item.destination, { recursive: true });
-        else await fs.copyFile(item.source, item.destination, fs.constants.COPYFILE_EXCL);
+        else await copyItem(item);
       }
       logger.success('Project Documents/Photos copied; source contents retained', {
         ...context, folders: folders.map((folder) => folder.name), fileCount: items.filter((item) => !item.directory).length,
+        overwrittenFileCount: overwritten.length,
       });
       results.push({ project, status: 'SUCCESS', downloadDirectory: destination, durationMs: Date.now() - startedAt });
     } catch (error) {

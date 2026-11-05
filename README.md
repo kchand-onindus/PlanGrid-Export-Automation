@@ -180,9 +180,11 @@ npm run unzip
 
 Install dependencies with `npm install` first. This local step does not require a browser, Playwright Chromium, or login credentials. It reads the same `input/projects.csv` and uses the same `DOWNLOAD_DIR` configuration (default: `downloads`).
 
-For each enabled row, it opens `<DOWNLOAD_DIR>/<project_clean_name>/<project_clean_name>.zip` and creates a parent folder named `project_clean_name` next to that ZIP. All archive contents are extracted into `<DOWNLOAD_DIR>/<project_clean_name>/<project_clean_name>/`. It preserves the ZIP's internal files and directories, including any wrapper directory already inside the archive, and retains the original ZIP. It does not flatten, rearrange, or further process the extracted contents.
+For each enabled row, it opens `<DOWNLOAD_DIR>/<project_clean_name>/<project_clean_name>.zip` and creates a parent folder named `project_clean_name` next to that ZIP. All contents are extracted into `<DOWNLOAD_DIR>/<project_clean_name>/<project_clean_name>/`. If the ZIP has a single project wrapper containing Documents, Photos, or Drawings, extraction omits that wrapper and places its contents directly in the clean-name parent. All deeper folder paths and filenames are preserved, and the source ZIP is retained.
 
-`project_clean_name` locates the project folder and ZIP and names the new extraction parent; `project_name` is not used to name extracted contents. Extraction preserves internal names as stored, including trailing spaces and periods, with no filename cleanup or renaming. If the archive contains `Grainger 101410.01 ROW Plans /Drawings/...`, that internal folder is extracted inside the new parent with its original name. Names unsupported by the host filesystem (such as trailing-space names on Windows) cause a reported failure rather than being renamed.
+`project_clean_name` locates the project folder and ZIP and names the extraction parent; `project_name` is not used to name extracted contents. For example, PlanGrid's `DB2505 - I-24 at Epps Mill-Buchanan Road/Documents/...` becomes `Documents/...` inside the extraction parent named `DB2505 - I-24 at Epps Mill_Buchanan Road`. The wrapper's hyphen/underscore difference therefore creates no extra folder. This removes only the single project container; it does not flatten Documents, Photos, Drawings, or their nested subfolders. Archives already containing those folders at their root, or containing multiple top-level items, keep their layout.
+
+Apart from the omitted project wrapper, internal names remain unchanged, including trailing spaces and periods. Names unsupported by the host filesystem cause a reported failure rather than being renamed.
 
 For example, with `project_clean_name=Example_Project`, the result might be:
 
@@ -195,7 +197,9 @@ downloads/
       Documents/
 ```
 
-Disabled rows are skipped. Existing directories can be reused, but existing files are never overwritten. If an archive would conflict with an existing file (including on a repeat run), that project fails before extraction begins. Missing folders/ZIPs, invalid archives, unsafe paths, links, and colliding archive paths are reported as failures; the command continues with the remaining projects and exits with a nonzero status if any project fails. A corrupt file or disk error during extraction may leave partial output; inspect that project's folder before retrying.
+Disabled rows are skipped. **Re-running unzip automatically refreshes the entire inner extraction folder**, overwriting previous extracted files and removing stale files or an older extra project wrapper. No manual renaming or cleanup is required. Treat `<DOWNLOAD_DIR>/<project_clean_name>/<project_clean_name>/` as generated output; only the contents of the current ZIP remain there after a successful refresh. The source ZIP, files beside the extraction parent, and sync staging output are not replaced.
+
+Extraction first builds a temporary replacement and verifies file sizes and checksums. Once it succeeds, the replacement is published at the final clean-name path and the previous extraction is removed. A corrupt archive or extraction failure retains the previous output. If publishing fails, the command attempts to restore the previous folder; if restoration also fails, it reports the backup location for recovery. Temporary cleanup problems are logged. Missing folders/ZIPs, unsafe paths, archive links, and filename collisions within the ZIP still fail that project; the command continues with the remaining projects and exits with a nonzero status if any project fails.
 
 Archives containing different files such as `9C.pdf` and `9c.pdf` in the same internal folder require a case-sensitive destination to retain both names. The command checks the filesystem through the existing ZIP's filename and reports both conflicting paths before extracting on a case-insensitive destination. Adding the extraction parent does not resolve such conflicts; use a case-sensitive download location and set `DOWNLOAD_DIR` accordingly to preserve these archives exactly.
 
@@ -211,7 +215,7 @@ npm run sync:prepare
 
 This command copies local files only. It does not unzip archives, open a browser, upload files, or connect to a sync service. Install dependencies with `npm install` and use the same `input/projects.csv` and `DOWNLOAD_DIR` as the export/unzip steps. The earlier filename-conflict limitation still applies to extraction; this command does not resolve or retry it.
 
-For each enabled project, it opens `<DOWNLOAD_DIR>/<project_clean_name>/<project_clean_name>/` and looks for `Documents` and `Photos`. If neither is directly present, it also checks the immediate child directories to support a project wrapper included in the ZIP. If more than one wrapper contains those folders, it reports an ambiguous source instead of merging them. It does not search arbitrary nested drawing trees.
+For each enabled project, it opens `<DOWNLOAD_DIR>/<project_clean_name>/<project_clean_name>/` and looks for `Documents` and `Photos` directly in that folder, matching the refreshed unzip layout. For older extractions, if neither is directly present, it also checks the immediate child directories to support a project wrapper included in the ZIP. If more than one wrapper contains those folders, it reports an ambiguous source instead of merging them. It does not search arbitrary nested drawing trees.
 
 It copies whichever folders exist, including all their nested files, subdirectories, and empty folders, to:
 
@@ -238,7 +242,19 @@ SYNC_UP_DIR=C:/Users/MigrationEngineer/Desktop/sync_ups
 
 On macOS, an example absolute path is `SYNC_UP_DIR=/Users/kunalchand/Desktop/sync_ups`. Copy destinations must be separate from the extracted project tree. The configured root and each project directory are created as needed.
 
-Existing destination directories are reused, but existing files are never overwritten or deleted. If either folder would overwrite an existing file, that project fails before copying begins. Links and special files are rejected. A disk error or filesystem name conflict during copying can leave partial output; inspect that project's staging folder before retrying. The command continues with the other projects and exits with a nonzero status if any project fails.
+Existing destination directories are reused. **If matching destination files already exist, the command asks once per project before copying anything:**
+
+```text
+Project: <project_clean_name>
+Destination: <SYNC_UP_DIR>/<project_clean_name>
+Existing files that will be overwritten: <count>
+  Documents/example.pdf
+Overwrite these existing files? [y/N]:
+```
+
+The preview lists up to ten affected paths and the total count. Enter **`y` or `yes`** to overwrite the existing matching files and copy new files. Enter **`n` or `no`**, press **Enter**, or close input to skip that complete project without changing its destination. Approval applies to that project's listed existing files in this run; it is not saved for future runs or other projects. Unrelated destination files are retained, and sources remain unchanged. If every incoming file is new, copying proceeds without a prompt.
+
+Run in an interactive terminal when approving overwrites. A noninteractive run encountering existing files fails that project without copying, rather than assuming approval. Links, special files, and file/directory type conflicts are rejected. If a destination file changes while confirmation is pending, the command stops that project so you can review it again. Approved replacements are copied to a temporary file before replacing the old file. A disk error or filesystem name conflict can still leave a partially completed project; inspect the staging folder before retrying. The command continues with the other projects, logs approval/decline decisions, and exits with a nonzero status if any project fails.
 
 Logs are written to the terminal and `logs/sync-preparation-<timestamp>.log`. The default `sync_ups` contents are ignored by Git. Temporary-folder tests are listed under [Validation commands](#validation-commands).
 
