@@ -328,21 +328,80 @@ test('rejects a linked extraction parent without modifying its target', async (t
   assert.deepEqual(await fs.readdir(outside), ['keep.txt']);
 });
 
-test('restores the old extraction if publishing the verified replacement fails', async (t) => {
+test('publishes fresh and repeated extractions even when Windows-style directory renames are denied', async (t) => {
+  const f = await fixture(t);
+  t.mock.method(fs, 'rename', async () => {
+    throw Object.assign(new Error('EPERM: directory rename blocked'), { code: 'EPERM' });
+  });
+  await fs.writeFile(f.zipPath, makeZip([{ name: 'Project/Documents/file.txt', contents: 'first extraction' }]));
+  const [first] = await unzipProjects(f.input, f.downloads, quietLogger);
+  assert.equal(first.status, 'SUCCESS', first.message);
+  const before = await fs.stat(f.output);
+  await fs.writeFile(f.zipPath, makeZip([{ name: 'Project/Documents/file.txt', contents: 'updated extraction' }]));
+  await fs.writeFile(path.join(f.output, 'stale.txt'), 'old file');
+  const [second] = await unzipProjects(f.input, f.downloads, quietLogger);
+  assert.equal(second.status, 'SUCCESS', second.message);
+  assert.equal(await fs.readFile(path.join(f.output, 'Documents/file.txt'), 'utf8'), 'updated extraction');
+  assert.equal((await fs.stat(f.output)).ino, before.ino);
+  await assert.rejects(fs.stat(path.join(f.output, 'stale.txt')), { code: 'ENOENT' });
+  assert.deepEqual((await fs.readdir(f.directory)).sort(), ['Custom_name', 'Custom_name.zip']);
+});
+
+test('copies the previous extraction back if publishing the verified replacement fails', async (t) => {
   const f = await fixture(t);
   await fs.mkdir(f.output);
   await fs.writeFile(path.join(f.output, 'previous.txt'), 'old extraction');
   await fs.writeFile(f.zipPath, makeZip([{ name: 'Documents/new.txt', contents: 'new extraction' }]));
-  const rename = fs.rename;
-  t.mock.method(fs, 'rename', async (from: string, to: string) => {
-    if (path.basename(from).startsWith('.unzip-stage-')) throw new Error('Simulated publish failure');
-    return rename(from, to);
+  const copy = fs.cp;
+  t.mock.method(fs, 'cp', async (from: string, to: string, options: Parameters<typeof fs.cp>[2]) => {
+    if (path.basename(path.dirname(from)).startsWith('.unzip-stage-')) {
+      await fs.mkdir(to, { recursive: true });
+      await fs.writeFile(path.join(to, 'partial.txt'), 'partial copy');
+      throw new Error('Simulated publish copy failure');
+    }
+    return copy(from, to, options);
   });
   const [result] = await unzipProjects(f.input, f.downloads, quietLogger);
   assert.equal(result.status, 'FAILED');
-  assert.match(result.message!, /Simulated publish failure/);
+  assert.match(result.message!, /Simulated publish copy failure/);
   assert.equal(await fs.readFile(path.join(f.output, 'previous.txt'), 'utf8'), 'old extraction');
+  assert.deepEqual(await fs.readdir(f.output), ['previous.txt']);
   assert.deepEqual((await fs.readdir(f.directory)).sort(), ['Custom_name', 'Custom_name.zip']);
+});
+
+test('leaves the previous extraction intact if its backup cannot be copied', async (t) => {
+  const f = await fixture(t);
+  await fs.mkdir(f.output);
+  await fs.writeFile(path.join(f.output, 'previous.txt'), 'old extraction');
+  await fs.writeFile(f.zipPath, makeZip([{ name: 'Documents/new.txt' }]));
+  t.mock.method(fs, 'cp', async () => { throw new Error('Simulated backup copy failure'); });
+  const [result] = await unzipProjects(f.input, f.downloads, quietLogger);
+  assert.equal(result.status, 'FAILED');
+  assert.match(result.message!, /backup copy failure/);
+  assert.equal(await fs.readFile(path.join(f.output, 'previous.txt'), 'utf8'), 'old extraction');
+  assert.deepEqual(await fs.readdir(f.output), ['previous.txt']);
+  assert.deepEqual((await fs.readdir(f.directory)).sort(), ['Custom_name', 'Custom_name.zip']);
+});
+
+test('retains a recovery backup if both publication and restoration copies fail', async (t) => {
+  const f = await fixture(t);
+  await fs.mkdir(f.output);
+  await fs.writeFile(path.join(f.output, 'previous.txt'), 'old extraction');
+  const zip = makeZip([{ name: 'Documents/new.txt' }]);
+  await fs.writeFile(f.zipPath, zip);
+  const copy = fs.cp;
+  t.mock.method(fs, 'cp', async (from: string, to: string, options: Parameters<typeof fs.cp>[2]) => {
+    if (from !== f.output) throw new Error('Simulated persistent copy lock');
+    return copy(from, to, options);
+  });
+  const [result] = await unzipProjects(f.input, f.downloads, quietLogger);
+  assert.equal(result.status, 'FAILED');
+  assert.match(result.message!, /previous files remain at/);
+  const backups = (await fs.readdir(f.directory)).filter((name) => name.startsWith('.unzip-backup-'));
+  assert.equal(backups.length, 1);
+  assert.equal(await fs.readFile(path.join(f.directory, backups[0], 'previous/previous.txt'), 'utf8'), 'old extraction');
+  assert.deepEqual(await fs.readFile(f.zipPath), zip);
+  assert.equal((await fs.readdir(f.directory)).some((name) => name.startsWith('.unzip-stage-')), false);
 });
 
 test('sync preparation reads Documents and Photos from the refreshed clean-name extraction parent', async (t) => {

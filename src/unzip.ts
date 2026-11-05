@@ -117,6 +117,25 @@ async function cleanTemporary(directory: string, logger: Logger): Promise<void> 
   }
 }
 
+async function clearDirectoryContents(directory: string): Promise<void> {
+  const existing = await statIfPresent(directory);
+  if (!existing) return;
+  if (!existing.isDirectory()) throw new Error(`Expected an extraction directory, not a file or link: ${directory}`);
+  // Keep the directory itself in place: Windows can block renaming an open folder.
+  for (const name of await fs.readdir(directory)) {
+    await fs.rm(path.join(directory, name), { recursive: true, force: true, maxRetries: 3 });
+  }
+}
+
+async function copyDirectoryContents(source: string, destination: string): Promise<void> {
+  await fs.mkdir(destination, { recursive: true });
+  for (const name of await fs.readdir(source)) {
+    await fs.cp(path.join(source, name), path.join(destination, name), {
+      recursive: true, force: true, dereference: false, verbatimSymlinks: true,
+    });
+  }
+}
+
 async function publishExtraction(staging: string, destination: string, logger: Logger): Promise<void> {
   const existing = await statIfPresent(destination);
   if (existing && !existing.isDirectory()) {
@@ -125,29 +144,35 @@ async function publishExtraction(staging: string, destination: string, logger: L
   let backupRoot: string | undefined;
   let backup: string | undefined;
   if (existing) {
-    logger.info('Replacing previous extraction folder with verified ZIP contents', { extractionDirectory: destination });
+    logger.info('Refreshing previous extraction contents without renaming its folder', { extractionDirectory: destination });
     backupRoot = await fs.mkdtemp(path.join(path.dirname(destination), '.unzip-backup-'));
     backup = path.join(backupRoot, 'previous');
     try {
-      await fs.rename(destination, backup);
+      // Copy before clearing anything so a failed backup leaves existing files intact.
+      await fs.cp(destination, backup, {
+        recursive: true, force: false, errorOnExist: true, dereference: false, verbatimSymlinks: true,
+      });
     } catch (error) {
       await cleanTemporary(backupRoot, logger);
       throw error;
     }
   }
   try {
-    await fs.rename(staging, destination);
+    logger.info('Copying verified extraction into the final clean-name folder', { extractionDirectory: destination });
+    await clearDirectoryContents(destination);
+    await copyDirectoryContents(staging, destination);
   } catch (error) {
-    if (backup) {
-      try {
-        await fs.rename(backup, destination);
-      } catch (restoreError) {
-        // Keep the backup for recovery if a filesystem error prevents rollback.
-        logger.error('Could not restore the previous extraction; its files remain in the backup', {
-          backup, destination, error: restoreError instanceof Error ? restoreError.message : String(restoreError),
-        });
-        throw new Error(`Could not publish extraction or restore its previous folder; previous files remain at ${backup}`, { cause: error });
-      }
+    try {
+      await clearDirectoryContents(destination);
+      if (backup) await copyDirectoryContents(backup, destination);
+    } catch (restoreError) {
+      // Retain the backup if Windows locks also prevent copying it back.
+      logger.error('Could not restore the extraction folder after a copy failure', {
+        backup, destination, error: restoreError instanceof Error ? restoreError.message : String(restoreError),
+      });
+      throw new Error(backup
+        ? `Could not publish extraction or restore its previous contents; previous files remain at ${backup}`
+        : `Could not publish extraction or clear incomplete output at ${destination}; source ZIP retained`, { cause: error });
     }
     if (backupRoot) await cleanTemporary(backupRoot, logger);
     throw error;
