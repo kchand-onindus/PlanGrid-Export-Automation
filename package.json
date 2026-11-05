@@ -10,6 +10,7 @@
     "export:chrome": "tsx src/run-export.ts --connect-chrome",
     "unzip": "tsx src/unzip-main.ts",
     "sync:prepare": "tsx src/sync/main.ts",
+    "drawings:prepare": "tsx src/drawings/main.ts",
     "export": "tsx src/run-export.ts",
     "headless": "tsx src/run-export.ts --headless",
     "import:prepare": "tsx src/import/main.ts",
@@ -17,6 +18,7 @@
     "test:export": "tsx --test src/csv.test.ts src/project-exporter.test.ts",
     "test:unzip": "tsx --test src/unzip.test.ts",
     "test:sync": "tsx --test src/sync/preparation.test.ts",
+    "test:drawings": "tsx --test src/drawings/preparation.test.ts",
     "test:import": "tsx --test src/import/preparation.test.ts",
     "install:browsers": "playwright install chromium"
   },

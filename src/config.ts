@@ -17,6 +17,9 @@ export const paths = {
   syncUpRoot: path.isAbsolute(process.env[ENV_KEYS.syncUpDir] ?? '')
     ? process.env[ENV_KEYS.syncUpDir]!
     : path.resolve(projectRoot, process.env[ENV_KEYS.syncUpDir] ?? 'sync_ups'),
+  drawingsRoot: path.isAbsolute(process.env[ENV_KEYS.drawingsDir] ?? '')
+    ? process.env[ENV_KEYS.drawingsDir]!
+    : path.resolve(projectRoot, process.env[ENV_KEYS.drawingsDir] ?? 'drawings'),
   logRoot: path.join(projectRoot, 'logs'),
 };
 

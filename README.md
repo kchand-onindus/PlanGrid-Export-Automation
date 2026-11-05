@@ -6,7 +6,7 @@ This repository contains a two-part automation workflow. Part A downloads projec
 
 | Part | Status | Current capabilities |
 | --- | --- | --- |
-| Part A — PlanGrid export and local preparation | Available | Downloads enabled projects, extracts their ZIPs, and copies Documents/Photos into local sync staging. Chrome mode retains authentication; automated mode logs out. |
+| Part A — PlanGrid export and local preparation | Available | Downloads enabled projects, extracts their ZIPs, copies Documents/Photos into local sync staging, and separately copies all other project contents into drawings staging. Chrome mode retains authentication; automated mode logs out. |
 | Part B — Kahua import | **In development** | Prepares one configured project's drawing files, validates the preparation plan, and automates Kahua login through landing-page verification. Project selection and file upload are not implemented yet. |
 
 ## Shared setup
@@ -32,20 +32,22 @@ Part A is the working export workflow. It logs into PlanGrid, finds each enabled
 
 Copy `.env.example` to `.env` in the repository folder if you do not already have one. When updating an existing installation, add any missing settings from `.env.example` while preserving your credentials and custom paths.
 
-For the main Chrome → unzip → sync workflow, configure these directories:
+For the main Chrome → unzip → sync workflow and the separate drawings copy, configure these directories:
 
 ```env
 DOWNLOAD_DIR=downloads
 SYNC_UP_DIR=sync_ups
+DRAWINGS_DIR=drawings
 ```
 
-`DOWNLOAD_DIR` is the source/output root shared by Chrome export, unzip, and sync preparation. `SYNC_UP_DIR` is the destination root for copied Documents/Photos. Relative paths resolve from the repository folder; absolute paths can point to different folders or drives.
+`DOWNLOAD_DIR` is the source/output root shared by Chrome export, unzip, and both copy commands. `SYNC_UP_DIR` is the destination root for copied Documents/Photos. `DRAWINGS_DIR` is a separate destination for everything else, including Drawings and other files/folders. Their defaults are `downloads`, `sync_ups`, and `drawings` inside the repository. Relative paths resolve from the repository folder; absolute paths can point to different folders or drives.
 
 Windows example (forward slashes work with Node.js on Windows):
 
 ```env
 DOWNLOAD_DIR=D:/PlanGrid/downloads
 SYNC_UP_DIR=E:/Migration/sync_ups
+DRAWINGS_DIR=E:/Migration/drawings
 ```
 
 macOS example:
@@ -53,9 +55,10 @@ macOS example:
 ```env
 DOWNLOAD_DIR=/Volumes/PlanGridData/downloads
 SYNC_UP_DIR=/Users/kunalchand/Desktop/sync_ups
+DRAWINGS_DIR=/Users/kunalchand/Desktop/drawings
 ```
 
-If the ZIP contains case-distinct files in the same directory, use a case-sensitive download location to preserve both. Keep that volume mounted during download, extraction, and copying. Sync destinations must also support the names being copied; the commands do not rename conflicting files.
+If the ZIP contains case-distinct files in the same directory, use a case-sensitive download location to preserve both. Keep that volume mounted during download, extraction, and copying. Both copy destinations must also support the names being copied; the commands do not rename conflicting files.
 
 For the miscellaneous automated-login modes, also configure:
 
@@ -100,7 +103,7 @@ Complete the shared setup, configure `.env`, and prepare `input/projects.csv` fi
 | 2. [Unzip](#step-2-extract-downloaded-zip-files) | **`npm run unzip`** | Extracts each ZIP into its clean-name parent folder. |
 | 3. [Prepare local sync folders](#step-3-prepare-documents-and-photos-for-syncing) | **`npm run sync:prepare`** | Copies Documents/Photos into `SYNC_UP_DIR/<project_clean_name>/`. |
 
-**Before the Chrome step, enable remote debugging at `chrome://inspect/#remote-debugging` and keep Chrome signed in to PlanGrid.** Alternative login modes, validation, and Part B commands are under [Miscellaneous](#miscellaneous).
+**Before the Chrome step, enable remote debugging at `chrome://inspect/#remote-debugging` and keep Chrome signed in to PlanGrid.** The separate [drawings copy](#prepare-drawings-and-other-project-contents) can also run after successful extraction. Alternative login modes, validation, and Part B commands are under [Miscellaneous](#miscellaneous).
 
 #### Step 1: Existing Chrome session
 
@@ -270,7 +273,43 @@ For example, `project_clean_name=Grainger_101410_01_ROW_Plans` produces `downloa
 
 ## Miscellaneous
 
-These commands cover alternative login modes, validation, and the Part B workflow that is still in development. Use the three commands above for the regular download → unzip → local sync preparation workflow.
+These commands cover the separate drawings copy, alternative login modes, validation, and the Part B workflow that is still in development. Use the three commands above for the regular download → unzip → local sync preparation workflow.
+
+### Prepare Drawings and other project contents
+
+```bash
+npm run drawings:prepare
+```
+
+Run after successful `npm run unzip`, from the repository folder on **Windows Command Prompt, Windows PowerShell, macOS, or Linux**. Install dependencies with `npm install` first. This is a separate local copy command using the same `input/projects.csv` and `DOWNLOAD_DIR`; it does not open a browser or upload anything. It can run independently of `sync:prepare` once extraction succeeds.
+
+For each enabled project, it reads `<DOWNLOAD_DIR>/<project_clean_name>/<project_clean_name>/`, creates `<DRAWINGS_DIR>/<project_clean_name>/`, and copies **everything except the project's top-level `Documents` and `Photos` entries**. This includes Drawings, all other folders, loose files such as export reports, nested contents, and empty folders. Folder hierarchy and internal names are preserved; nested folders named Documents or Photos inside an included tree are retained. Sources remain unchanged.
+
+For an older extraction containing only one project wrapper with Documents, Photos, or Drawings, it copies from inside that wrapper. Multiple matching wrappers are rejected as ambiguous. When there are multiple top-level items, their hierarchy and sibling files are retained rather than omitting a wrapper.
+
+With the default `DRAWINGS_DIR=drawings`, output looks like:
+
+```text
+drawings/
+  <project_clean_name>/
+    Drawings/
+      <version folder>/
+        <nested files and folders>
+    <other project folders>/
+    <other project files>
+```
+
+Set `DRAWINGS_DIR` in `.env` to change the destination; relative and absolute examples are in [Configure the environment](#configure-the-environment). The destination must be separate from the extracted project tree. Disabled projects and projects containing only Documents/Photos (or no contents) are skipped. Missing extraction folders fail that project.
+
+The same overwrite safeguards as `sync:prepare` apply. Before copying any files for a project with existing matching destination files, the command previews the project, destination, count, and up to ten example paths, then asks once:
+
+```text
+Overwrite these existing files? [y/N]:
+```
+
+Only `y`/`yes` approves replacing the listed files in that project for that run. `n`/`no`, Enter, or closed input skips the entire project unchanged. Noninteractive conflicts fail without copying. New files need no prompt. Unrelated destination files remain, including any Documents/Photos already in the destination. Destinations are rechecked after approval, and approved replacements are staged before replacing existing files. Links, special files, overlapping source/destination trees, and file/directory type conflicts are rejected. A filesystem error can still leave a partially completed project; inspect the destination before retrying. Failures do not stop later projects, but cause a nonzero exit status.
+
+Logs are written to `logs/drawings-preparation-<timestamp>.log` and the terminal. Generated contents in the default `drawings/` folder are ignored by Git. This copy is separate from Part B's drawing-version import preparation.
 
 ### Normal automated login
 
@@ -340,10 +379,11 @@ npm exec tsc -- --noEmit
 npm run test:export
 npm run test:unzip
 npm run test:sync
+npm run test:drawings
 npm run test:import
 ```
 
-These checks use local tests and temporary fixtures; they do not launch a real login/export run or copy your downloaded projects. Run the checks relevant to your changes. `test:export` checks CSV parsing and download naming; `test:unzip` checks extraction; `test:sync` checks Documents/Photos copying; `test:import` checks Part B local preparation.
+These checks use local tests and temporary fixtures; they do not launch a real login/export run or copy your downloaded projects. Run the checks relevant to your changes. `test:export` checks CSV parsing and download naming; `test:unzip` checks extraction; `test:sync` checks Documents/Photos copying; `test:drawings` checks copying everything else; `test:import` checks Part B local preparation.
 
 ### Part B — Kahua import (in development)
 

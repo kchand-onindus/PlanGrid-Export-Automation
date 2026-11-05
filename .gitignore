@@ -4,6 +4,8 @@ downloads/*
 !downloads/.gitkeep
 sync_ups/*
 !sync_ups/.gitkeep
+drawings/*
+!drawings/.gitkeep
 logs/*
 !logs/.gitkeep
 .env
