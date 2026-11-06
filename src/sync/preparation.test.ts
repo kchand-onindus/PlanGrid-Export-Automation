@@ -12,7 +12,7 @@ import { confirmSyncOverwrite } from './confirmation.js';
 const headers = 'project_uid,project_name,project_clean_name,enabled,start_date,end_date';
 const quietLogger: Logger = { general() {}, info() {}, debug() {}, success() {}, warn() {}, error() {} };
 
-async function fixture(t: TestContext, rows = 'uid-1,Original Project,Custom_name,true,,') {
+async function fixture(t: TestContext, rows = 'uid-1,Original Project,Custom_name,true,,', existingDestination = true) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'sync-preparation-test-'));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const input = path.join(root, 'projects.csv');
@@ -22,6 +22,7 @@ async function fixture(t: TestContext, rows = 'uid-1,Original Project,Custom_nam
   const destination = path.join(syncRoot, 'Custom_name');
   await fs.writeFile(input, `${headers}\n${rows}\n`);
   await fs.mkdir(extraction, { recursive: true });
+  if (existingDestination) await fs.mkdir(destination, { recursive: true });
   return { root, input, downloads, syncRoot, extraction, destination };
 }
 
@@ -80,7 +81,7 @@ test('rejects ambiguous wrappers instead of merging their contents', async (t) =
   const [result] = await prepareSync(f.input, f.downloads, f.syncRoot, quietLogger);
   assert.equal(result.status, 'FAILED');
   assert.match(result.message!, /Multiple project wrappers/);
-  await assert.rejects(fs.stat(f.destination), { code: 'ENOENT' });
+  assert.deepEqual(await fs.readdir(f.destination), []);
 });
 
 test('preflights both folders before copying and preserves existing destination files on conflict', async (t) => {
@@ -132,6 +133,7 @@ test('declining skips the complete project without copying new files and continu
   await write(path.join(f.extraction, 'Photos/new.jpg'), 'new photo');
   await write(path.join(f.destination, 'Documents/existing.txt'), 'keep destination');
   await write(path.join(f.downloads, 'Next/Next/Documents/next.txt'), 'next project');
+  await fs.mkdir(path.join(f.syncRoot, 'Next'));
   const results = await prepareSync(f.input, f.downloads, f.syncRoot, quietLogger, async () => false);
   assert.deepEqual(results.map((result) => result.status), ['SKIPPED', 'SUCCESS']);
   assert.equal(await fs.readFile(path.join(f.destination, 'Documents/existing.txt'), 'utf8'), 'keep destination');
@@ -256,7 +258,7 @@ test('rejects links inside source folders before copying either folder', async (
   const [result] = await prepareSync(f.input, f.downloads, f.syncRoot, quietLogger);
   assert.equal(result.status, 'FAILED');
   assert.match(result.message!, /Links and special files/);
-  await assert.rejects(fs.stat(f.destination), { code: 'ENOENT' });
+  assert.deepEqual(await fs.readdir(f.destination), []);
 });
 
 test('rejects sync destinations overlapping the extracted tree', async (t) => {
@@ -269,7 +271,78 @@ test('rejects sync destinations overlapping the extracted tree', async (t) => {
 });
 
 test('rejects an invalid CSV before staging any data', async (t) => {
-  const f = await fixture(t, '1,Project,../outside,true,,');
+  const f = await fixture(t, '1,Project,../outside,true,,', false);
   await assert.rejects(prepareSync(f.input, f.downloads, f.syncRoot, quietLogger), /project_clean_name/);
   await assert.rejects(fs.stat(f.syncRoot), { code: 'ENOENT' });
+});
+
+test('requires an existing project destination without creating the root or project, and continues', async (t) => {
+  for (const existingRoot of [false, true]) {
+    const f = await fixture(t, '1,Missing,Missing,true,,\n2,Good,Custom_name,true,,', false);
+    await write(path.join(f.downloads, 'Missing/Missing/Documents/file.txt'), 'missing destination');
+    await write(path.join(f.extraction, 'Photos/site.jpg'), 'photo');
+    if (existingRoot) await fs.mkdir(f.destination, { recursive: true });
+    const results = await prepareSync(f.input, f.downloads, f.syncRoot, quietLogger);
+    assert.deepEqual(results.map((result) => result.status), ['FAILED', existingRoot ? 'SUCCESS' : 'FAILED']);
+    assert.match(results[0].message!, /Destination project folder must already exist/);
+    await assert.rejects(fs.stat(path.join(f.syncRoot, 'Missing')), { code: 'ENOENT' });
+    if (existingRoot) {
+      assert.equal(await fs.readFile(path.join(f.destination, 'Photos/site.jpg'), 'utf8'), 'photo');
+      assert.deepEqual(await fs.readdir(f.syncRoot), ['Custom_name']);
+    } else {
+      await assert.rejects(fs.stat(f.syncRoot), { code: 'ENOENT' });
+    }
+  }
+});
+
+test('warns about existing folders even without overwrites and only changes Documents/Photos', async (t) => {
+  const f = await fixture(t);
+  await write(path.join(f.extraction, 'Documents/new.txt'), 'document');
+  await write(path.join(f.extraction, 'Photos/new.jpg'), 'photo');
+  await write(path.join(f.extraction, 'Drawings/existing.pdf'), 'do not copy');
+  const retained = [
+    'Custom_name/Documents/retained.txt', 'Custom_name/Photos/retained.jpg',
+    'Custom_name/Drawings/existing.pdf', 'Custom_name/Other/deep/file.txt',
+    'Custom_name/project.txt', 'Other Project/Documents/file.txt', 'root.txt',
+  ];
+  for (const file of retained) await write(path.join(f.syncRoot, file), `keep ${file}`);
+  const before = await Promise.all(retained.map((file) => fs.stat(path.join(f.syncRoot, file))));
+  const parent = await fs.stat(f.destination);
+  const warnings: { message: string; context?: Record<string, unknown> }[] = [];
+  const logger = { ...quietLogger, warn(message: string, context?: Record<string, unknown>) { warnings.push({ message, context }); } };
+  const [result] = await prepareSync(f.input, f.downloads, f.syncRoot, logger, async () => {
+    throw new Error('No overwrite prompt should be needed');
+  });
+  assert.equal(result.status, 'SUCCESS', result.message);
+  assert.equal(warnings.length, 1);
+  assert.match(warnings[0].message, /destination folders already exist/);
+  assert.deepEqual(warnings[0].context?.existingFolders, ['Documents', 'Photos']);
+  assert.equal(warnings[0].context?.overwrittenFileCount, 0);
+  assert.equal((await fs.stat(f.destination)).ino, parent.ino);
+  for (const [index, file] of retained.entries()) {
+    assert.equal(await fs.readFile(path.join(f.syncRoot, file), 'utf8'), `keep ${file}`);
+    const after = await fs.stat(path.join(f.syncRoot, file));
+    assert.equal(after.ino, before[index].ino);
+    assert.equal(after.mtimeMs, before[index].mtimeMs);
+  }
+  assert.equal(await fs.readFile(path.join(f.destination, 'Documents/new.txt'), 'utf8'), 'document');
+  assert.equal(await fs.readFile(path.join(f.destination, 'Photos/new.jpg'), 'utf8'), 'photo');
+});
+
+test('rejects a project destination link without changing the linked folder', async (t) => {
+  const f = await fixture(t, undefined, false);
+  await write(path.join(f.extraction, 'Documents/new.txt'), 'document');
+  const outside = path.join(f.root, 'outside');
+  await fs.mkdir(outside);
+  await fs.mkdir(f.syncRoot);
+  try {
+    await fs.symlink(outside, f.destination, 'junction');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'EPERM') { t.skip('Symlink permission unavailable'); return; }
+    throw error;
+  }
+  const [result] = await prepareSync(f.input, f.downloads, f.syncRoot, quietLogger);
+  assert.equal(result.status, 'FAILED');
+  assert.match(result.message!, /Destination project folder must be a directory, not a file or link/);
+  assert.deepEqual(await fs.readdir(outside), []);
 });

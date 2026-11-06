@@ -101,7 +101,7 @@ Complete the shared setup, configure `.env`, and prepare `input/projects.csv` fi
 | --- | --- | --- |
 | 1. [Download through Chrome](#step-1-existing-chrome-session) | **`npm run export:chrome`** | Downloads ZIPs for enabled projects. |
 | 2. [Unzip](#step-2-extract-downloaded-zip-files) | **`npm run unzip`** | Extracts each ZIP into its clean-name parent folder. |
-| 3. [Prepare local sync folders](#step-3-prepare-documents-and-photos-for-syncing) | **`npm run sync:prepare`** | Copies Documents/Photos into `SYNC_UP_DIR/<project_clean_name>/`. |
+| 3. [Prepare local sync folders](#step-3-prepare-documents-and-photos-for-syncing) | **`npm run sync:prepare`** | Copies Documents/Photos into an existing `SYNC_UP_DIR/<project_clean_name>/` folder. |
 
 **Before the Chrome step, enable remote debugging at `chrome://inspect/#remote-debugging` and keep Chrome signed in to PlanGrid.** The separate [drawings copy](#prepare-drawings-and-other-project-contents) can also run after successful extraction. Alternative login modes, validation, and Part B commands are under [Miscellaneous](#miscellaneous).
 
@@ -222,16 +222,16 @@ This command copies local files only. It does not unzip archives, open a browser
 
 For each enabled project, it opens `<DOWNLOAD_DIR>/<project_clean_name>/<project_clean_name>/` and looks for `Documents` and `Photos` directly in that folder, matching the refreshed unzip layout. For older extractions, if neither is directly present, it also checks the immediate child directories to support a project wrapper included in the ZIP. If more than one wrapper contains those folders, it reports an ambiguous source instead of merging them. It does not search arbitrary nested drawing trees.
 
-It copies whichever folders exist, including all their nested files, subdirectories, and empty folders, to:
+The destination project folder must already exist and be named exactly `project_clean_name` from the CSV. It copies whichever source folders exist, including all their nested files, subdirectories, and empty folders, into that existing parent:
 
 ```text
 sync_ups/
-  <project_clean_name>/
+  <project_clean_name>/  # must already exist
     Documents/      # when present in the extracted project
     Photos/         # when present in the extracted project
 ```
 
-The source contents and folder names remain unchanged. Drawings and other project folders are not copied. Disabled rows and projects with neither folder are skipped; missing extraction folders are reported as failures.
+The source contents and folder names remain unchanged. Only `Documents/` and/or `Photos/` inside that destination project folder can be created or updated; other folders, loose files, and other projects in `sync_ups` remain untouched. Drawings and other source project folders are not copied. Disabled rows and projects with neither folder are skipped; missing extraction folders or destination project folders are reported as failures.
 
 Configure the staging root in `.env` (relative paths resolve from this repository):
 
@@ -245,9 +245,9 @@ For example, on Windows you can instead use:
 SYNC_UP_DIR=C:/Users/MigrationEngineer/Desktop/sync_ups
 ```
 
-On macOS, an example absolute path is `SYNC_UP_DIR=/Users/kunalchand/Desktop/sync_ups`. Copy destinations must be separate from the extracted project tree. The configured root and each project directory are created as needed.
+On macOS, an example absolute path is `SYNC_UP_DIR=/Users/kunalchand/Desktop/sync_ups`. Copy destinations must be separate from the extracted project tree. The configured root and each destination project directory must already exist; this command does not create them.
 
-Existing destination directories are reused. **If matching destination files already exist, the command asks once per project before copying anything:**
+If a destination `Documents` or `Photos` folder being copied already exists, the command warns that its contents will be merged and reports how many files would be overwritten, including zero when all incoming files are new. Existing files absent from the source are retained. **If matching destination files already exist, the command asks once per project before copying anything:**
 
 ```text
 Project: <project_clean_name>

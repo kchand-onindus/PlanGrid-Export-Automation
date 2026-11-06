@@ -206,9 +206,23 @@ async function prepareLocalCopies(
       }
       const existing = await statIfPresent(destination);
       if (existing && !existing.isDirectory()) throw new Error(`Destination project folder must be a directory, not a file or link: ${destination}`);
+      if (mode === 'sync' && !existing) {
+        throw new Error(`Destination project folder must already exist; no folders or files were created: ${destination}`);
+      }
       const items: CopyItem[] = [];
       for (const entry of sources) await planCopy(entry.source, path.join(destination, entry.name), items);
       const overwritten = items.filter((item) => item.previous);
+      if (mode === 'sync') {
+        const existingFolders = [];
+        for (const entry of sources) {
+          if (await statIfPresent(path.join(destination, entry.name))) existingFolders.push(entry.name);
+        }
+        if (existingFolders.length) {
+          logger.warn('Documents/Photos destination folders already exist; contents will be merged and unrelated files retained', {
+            ...context, existingFolders, overwrittenFileCount: overwritten.length,
+          });
+        }
+      }
       if (overwritten.length) {
         logger.warn('Existing destination files require overwrite confirmation', { ...context, existingFileCount: overwritten.length });
         if (!confirmOverwrite) throw new Error(`Existing destination files require overwrite approval; run npm run ${mode}:prepare in an interactive terminal`);
@@ -221,10 +235,11 @@ async function prepareLocalCopies(
         logger.info('Overwrite approved for existing destination files', { ...context, existingFileCount: overwritten.length });
       }
       // Recheck the preview before making changes, especially after waiting for input.
+      if (mode === 'sync') await requireDirectory(destination);
       for (const item of items) await checkDestination(item);
 
       logger.info(`Copying project ${description} to local staging`, { ...context, entries: sources.map((entry) => entry.name) });
-      await fs.mkdir(destination, { recursive: true });
+      if (mode === 'drawings') await fs.mkdir(destination, { recursive: true });
       for (const item of items) {
         if (item.directory) await fs.mkdir(item.destination, { recursive: true });
         else await copyItem(item);
