@@ -22,8 +22,11 @@ export const ENV_KEYS = {
 export const TIMEOUTS = {
   navigationMs: 30_000,
   actionMs: 15_000,
+  projectsNavigationMs: 45_000,
+  projectsReadyMs: 30_000,
   projectsPageSettleMs: 5_000,
   progressPollMs: 2_000,
+  downloadStatusFirstMs: 10 * 60_000,
 } as const;
 
 // Update these once the two-page login HTML is inspected.
@@ -48,10 +51,16 @@ export const PROJECT_SELECTORS = {
   projectRows: 'a[data-qa^="projects-table.row"]',
   settingsLink: 'li[data-qa="navigation.settings"] a',
   asBuiltLink: 'a[data-qa="Exports.asbuilts"]',
+  asBuiltPage: '.generateStaple form:visible, .asbuiltsList:visible',
+  asBuiltList: '.asbuiltsList',
+  generateAsBuilt: '#test-generateAsbuilt',
   startDateInput: 'input[name="startDate"]',
   endDateInput: 'input[name="endDate"]',
+  includeCheckboxes: '.generateStaple form input[type="checkbox"]',
   zipOption: '.abDeliveryMethod.makeZipAsbuilt',
-  asBuiltRows: 'tbody tr',
+  asBuiltRows: '.asbuiltsList tbody tr',
+  asBuiltRowById: (buildId: string) =>
+    `.asbuiltsList tbody tr:has(a.asbuilt-download[href*="/asbuilts/${buildId}/direct"])`,
   progress: '.abProgress',
   status: '.abDown',
   downloadLink: 'a.asbuilt-download',

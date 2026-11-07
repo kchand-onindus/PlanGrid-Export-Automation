@@ -1,6 +1,6 @@
 import { chromium, type Browser, type Page } from 'playwright';
 import { browserOptions } from '../playwright.config.js';
-import { connectChrome, paths, platformUrl } from './config.js';
+import { connectChrome, paths, platformUrl, timeouts } from './config.js';
 import { URLS } from '../utils/constants.js';
 import { login, logout, verifyAttachedChromeSession, type LoginResult } from './auth.js';
 import { connectToExistingChrome } from './chrome-session.js';
@@ -43,7 +43,7 @@ async function main(): Promise<void> {
 
       // A new tab in the existing context shares its session without navigating the user's tabs.
       page = await context.newPage();
-      await page.goto(URLS.projects, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+      await page.goto(URLS.projects, { waitUntil: 'domcontentloaded', timeout: timeouts.projectsNavigationMs });
       await page.bringToFront();
       loginResult = await verifyAttachedChromeSession(page);
     } else {
@@ -59,13 +59,10 @@ async function main(): Promise<void> {
     }
     logger.success('Login stage completed', { result: loginResult });
 
-    if (page.url() !== URLS.projects) {
-      logger.info('Opening project landing page', { projectsUrl: URLS.projects });
-      await page.goto(URLS.projects, { waitUntil: 'domcontentloaded', timeout: 30_000 });
-    }
     canAttemptLogout = true;
 
     const results = [];
+    let reuseProjectsPage = true;
     for (const [index, project] of projects.entries()) {
       logger.info('Processing project', {
         projectUid: project.projectUid,
@@ -74,7 +71,8 @@ async function main(): Promise<void> {
         position: index + 1,
         total: projects.length,
       });
-      const result = await exportProject(page, project, paths.downloadRoot);
+      const result = await exportProject(page, project, paths.downloadRoot, { reuseProjectsPage });
+      if (project.enabled) reuseProjectsPage = false;
       results.push(result);
 
       const resultLog = {
@@ -94,6 +92,15 @@ async function main(): Promise<void> {
       } else {
         logger.error('Project export failed', resultLog);
       }
+      if (project.enabled && result.status !== 'SUCCESS' && index + 1 < projects.length) {
+        logger.warn('Continuing with the next CSV project after this project was skipped or failed', {
+          projectName: project.projectName,
+          status: result.status,
+          nextPosition: index + 2,
+          total: projects.length,
+          instruction: 'The next enabled project will open the projects landing page and repeat readiness checks.',
+        });
+      }
     }
 
     if (connectChrome) {
@@ -107,6 +114,7 @@ async function main(): Promise<void> {
     const successful = results.filter((result) => result.status === 'SUCCESS').length;
     const skipped = results.filter((result) => result.status === 'SKIPPED').length;
     const failed = results.filter((result) => result.status === 'FAILED').length;
+    if (failed > 0) process.exitCode = 1;
 
     logger.general('Export run completed', {
       total: results.length,

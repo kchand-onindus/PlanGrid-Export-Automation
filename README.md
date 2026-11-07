@@ -26,7 +26,7 @@ The `reference-scripts/` directory is personal reference material and is unrelat
 
 ## Part A — PlanGrid export (available)
 
-Part A is the working export workflow. It logs into PlanGrid, finds each enabled project, creates or locates its As-built export, waits for completion, and downloads the ZIP file.
+Part A is the working export workflow. It logs into PlanGrid, finds each enabled project, generates a fresh As-built export, waits for completion, and downloads the ZIP file.
 
 ### Configure the environment
 
@@ -127,8 +127,27 @@ Run the highlighted command from the repository folder, then complete these step
 
 1. Click **Allow** if Chrome asks to share its debugging session.
 2. The script opens a new export tab and navigates to `https://app.plangrid.com/projects`. Wait for the projects page and visible project search box.
-3. Click **Resume ▶** in **Playwright Inspector**, the separate window opened by the script. The script verifies the projects URL and search box before starting exports. If authentication is incomplete, no exports start.
+3. Click **Resume ▶** in **Playwright Inspector**, the separate window opened by the script. The script verifies the projects URL and search box before starting exports. The first enabled project reuses this page and repeats readiness checks before searching, without an extra navigation. If authentication cannot be verified, no exports start.
 4. After exports, review the browser at the final pause and click **Resume ▶** again to disconnect. Chrome and its tabs remain open and signed in. The script also skips logout during failure cleanup.
+
+For every enabled project, the script opens **Settings → Download and Export As-Builts** and requests a fresh export. If previous builds exist, it captures every existing build ID from the table, including IDs in hidden links on processing rows, then immediately clicks **Generate a new As-built** to open the date form. It does not wait for older builds to finish. First-time projects open the form directly and start with no previous IDs. Both paths fill configured dates (blank CSV dates preserve platform defaults), check and verify every Include checkbox present, and click **Zip File**. This export behavior is shared by all three export commands.
+
+After returning to the table, the script compares its build IDs with the snapshot. **Exactly one new ID is required before tracking or downloading.** If none has appeared yet, it waits without an overall time limit and does not reuse an older build or submit again. If multiple new IDs appear during identification, it logs the project as FAILED and attempts no download; it never guesses based on row position. Missing, malformed, mismatched, or duplicate identifiers also fail the affected project. Once identified, the script keeps tracking that specific build ID even if another build later appears above it. It downloads only when the tracked build reaches `100%` and its own Download link is visible, then reports success only after the ZIP has been saved. Logs identify the build ID, form/table page, first-time/recurring path, and confirmed checkbox options; download URLs are not logged.
+
+Failure detection is deliberately limited: a tracked build whose visible status is exactly **Failed**, **Error**, **Cancelled**, or **Canceled** (ignoring case and an optional final period/exclamation mark) fails that project. Unknown or blank status text alone is not treated as terminal; until the `100%`/visible-Download pair is met, it produces a warning and continued polling. Unusable page controls or a missing/duplicated tracked row fail through the existing control-readiness checks. Older builds' statuses do not determine the new build's outcome. Build generation and transfer have no overall timeout, and restarting still processes the enabled CSV entries without saved checkpoints or automatic skipping.
+
+After authentication, the first enabled project reuses the projects page when its URL still matches. It waits for the page and search field to be ready even if Resume was clicked while the screen was still rendering. Later enabled projects navigate to the landing page once before searching, including after a previous project fails or is not found. Each project is logged with its CSV position and total.
+
+| Projects-page step | Wait |
+|---|---|
+| Navigation or initial page readiness | Up to 45 seconds |
+| Visible search field | Up to 30 seconds |
+| Extra settling before entering the project name | Fixed 5 seconds |
+| Search entry, matching row, and opening that row | Up to 30 seconds per operation |
+
+The maximum waits finish early when their condition is met. A navigation/readiness error fails that project; a project match that does not appear within the search wait is logged as skipped. The script logs the result and continues to the next CSV project, whose next enabled entry opens the landing page again. It does not automatically retry an entire export, which could request duplicate builds. Failed projects produce a nonzero exit status after all entries have been processed; authentication/startup failures still stop exports before the loop. These waits leave the authentication and Kahua timing rules unchanged.
+
+Download logs show **Clicking Download**, then **ZIP download started; saving to destination**. **As-built ZIP saved** appears only after saving finishes. If transfer or saving takes longer, status messages report elapsed minutes at **10, 20, 40, 80… minutes since the download click**, with gaps eventually capped at 24 hours. These messages are informational: they do not change the download, retry it, impose a transfer timeout, or affect build-progress polling. Updates stop when saving succeeds or the download operation fails.
 
 For later runs, keep Chrome running, keep remote debugging enabled, and reuse the same profile. You do not need to keep a PlanGrid tab open: the script opens the projects page itself. If the session expires, sign in through Chrome again before running. See [Chrome's connection instructions](https://developer.chrome.com/blog/chrome-devtools-mcp-debug-your-browser-session).
 
@@ -200,9 +219,11 @@ downloads/
       Documents/
 ```
 
-Disabled rows are skipped. **Re-running unzip automatically refreshes the entire inner extraction folder**, overwriting previous extracted files and removing stale files or an older extra project wrapper. No manual renaming or cleanup is required. Treat `<DOWNLOAD_DIR>/<project_clean_name>/<project_clean_name>/` as generated output; only the contents of the current ZIP remain there after a successful refresh. The source ZIP, files beside the extraction parent, and sync staging output are not replaced.
+Disabled rows are skipped. **Re-running unzip clears all previous contents of the inner extraction folder**, including files that also exist in the new ZIP, then copies in the verified new extraction. This also removes stale files or an older extra project wrapper. The extraction directory itself stays in place, and the folder-layout rules above still apply. No manual renaming or cleanup is required. Treat `<DOWNLOAD_DIR>/<project_clean_name>/<project_clean_name>/` as generated output; only the contents of the current ZIP remain there after a successful refresh. The source ZIP, files beside the extraction parent, and sync staging output are not replaced.
 
 Extraction first builds a temporary replacement and verifies file sizes and checksums. It then creates or reuses the final clean-name folder and **copies the verified contents into it, without renaming directories**. This avoids relying on the stage-to-final directory rename that Windows may block. On a refresh, the previous contents are copied to a temporary backup before the final folder's contents are cleared; the final directory itself stays in place. After a successful copy, temporary staging and backups are removed. This uses additional temporary disk space for staging and, when replacing an extraction, its backup.
+
+The `.unzip-stage-*` and `.unzip-backup-*` steps are deliberate safeguards: invalid archives fail before previous output is cleared, and the backup supports recovery if publication fails. They add disk I/O and temporary space use, but preserve previous output when checksums, unsafe paths, or filesystem filename conflicts prevent a valid extraction.
 
 A corrupt archive or extraction failure retains the previous output. If copying into the final folder fails, the command attempts to restore the previous contents by copying them back; if restoration also fails, it reports the retained backup location for recovery. Windows locks or permissions can still block copying or deletion, and these failures are reported. Temporary cleanup problems are logged. The final folder is populated progressively during copying, so start sync preparation only after unzip reports success. Missing folders/ZIPs, unsafe paths, archive links, and filename collisions within the ZIP still fail that project; the command continues with the remaining projects and exits with a nonzero status if any project fails.
 
@@ -250,10 +271,14 @@ On macOS, an example absolute path is `SYNC_UP_DIR=/Users/kunalchand/Desktop/syn
 If a destination `Documents` or `Photos` folder being copied already exists, the command warns that its contents will be merged and reports how many files would be overwritten, including zero when all incoming files are new. Existing files absent from the source are retained. **If matching destination files already exist, the command asks once per project before copying anything:**
 
 ```text
+EXISTING FILES FOUND — REVIEW BEFORE MERGING
 Project: <project_clean_name>
 Destination: <SYNC_UP_DIR>/<project_clean_name>
 Existing files that will be overwritten: <count>
   Documents/example.pdf
+MERGE: new files will be added, and the listed matching files will be replaced with extracted source files.
+Destination-only files and folders will be kept, including files absent from the latest export.
+Choose y/yes to approve this project, or n/Enter to skip the entire project without changes.
 Overwrite these existing files? [y/N]:
 ```
 
@@ -301,7 +326,7 @@ drawings/
 
 Set `DRAWINGS_DIR` in `.env` to change the destination; relative and absolute examples are in [Configure the environment](#configure-the-environment). The destination must be separate from the extracted project tree. Disabled projects and projects containing only Documents/Photos (or no contents) are skipped. Missing extraction folders fail that project.
 
-The same overwrite safeguards as `sync:prepare` apply. Before copying any files for a project with existing matching destination files, the command previews the project, destination, count, and up to ten example paths, then asks once:
+The same merge behavior and overwrite safeguards as `sync:prepare` apply. Before copying any files for a project with existing matching destination files, the command displays **EXISTING FILES FOUND — REVIEW BEFORE MERGING**, previews the project, destination, count, and up to ten example paths, and explains that matching files will be replaced while destination-only files will be kept. It then asks once:
 
 ```text
 Overwrite these existing files? [y/N]:
@@ -350,7 +375,7 @@ When `npm run export` starts, it opens the configured `PLATFORM_URL` in a visibl
 4. If Autodesk shows a password field, the script fills the password and clicks **Sign in**.
 5. **[Manual action — see “Autodesk OTP and CAPTCHA” below](#autodesk-otp-and-captcha):** If CAPTCHA, OTP, or verification appears, the script pauses. Complete it in the browser, submit it, wait for the PlanGrid projects page and project search box, and click **Resume** in the Playwright window.
 6. The script searches `input/projects.csv` by project name and processes each enabled project.
-7. For each project, it opens Settings → Download and Export As-Builts, uses the provided dates when present, waits for `100%`, and downloads the ZIP.
+7. For each project, it opens Settings → Download and Export As-Builts, snapshots all previous build IDs, and generates a fresh export without waiting for older builds, clicking **Generate a new As-built** when previous builds exist. It uses the provided dates when present, checks and verifies every Include checkbox, and clicks **Zip File**. It requires exactly one new build ID, then polls that specific build until `100%` with a visible Download link and saves its ZIP. Ambiguous identities or explicit failure statuses fail that project and allow the loop to continue. Logs identify the build ID, each form/table page, and the first-time/recurring path.
 8. After the project loop, it returns to the projects page, attempts to log out, and verifies the login page.
 9. The script pauses one final time for manual verification. Use the same **Resume** play button after checking the session and logging out if necessary; the browser then closes.
 
@@ -383,7 +408,7 @@ npm run test:drawings
 npm run test:import
 ```
 
-These checks use local tests and temporary fixtures; they do not launch a real login/export run or copy your downloaded projects. Run the checks relevant to your changes. `test:export` checks CSV parsing and download naming; `test:unzip` checks extraction; `test:sync` checks Documents/Photos copying; `test:drawings` checks copying everything else; `test:import` checks Part B local preparation.
+These checks use local tests and temporary fixtures; they do not launch a real login/export run or copy your downloaded projects. Run the checks relevant to your changes. `test:export` checks CSV parsing and simulated first-time/recurring export requests, checkbox verification, whole-table ID snapshots (including processing builds), ambiguity rejection, stable-ID polling despite reordered rows, conservative status handling, rejection of older downloads, initial-page reuse and readiness waits, recovery after project failures, download naming, and transfer-status scheduling/cleanup with a simulated clock; `test:unzip` checks extraction; `test:sync` checks Documents/Photos copying; `test:drawings` checks copying everything else; `test:import` checks Part B local preparation.
 
 ### Part B — Kahua import (in development)
 

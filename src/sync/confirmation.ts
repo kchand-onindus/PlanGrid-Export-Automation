@@ -12,11 +12,14 @@ export async function confirmSyncOverwrite(
   if (!interactive) {
     throw new Error('Overwrite confirmation requires an interactive terminal; no files were changed for this project');
   }
-  output.write(`\nProject: ${request.project.projectCleanName}\nDestination: ${request.destination}\n`
+  output.write(`\nEXISTING FILES FOUND — REVIEW BEFORE MERGING\n`
+    + `Project: ${request.project.projectCleanName}\nDestination: ${request.destination}\n`
     + `Existing files that will be overwritten: ${request.files.length}\n`);
   for (const file of request.files.slice(0, 10)) output.write(`  ${path.relative(request.destination, file)}\n`);
   if (request.files.length > 10) output.write(`  ...and ${request.files.length - 10} more\n`);
-  output.write('This replaces the listed destination files with the extracted source files. Unrelated files remain.\n');
+  output.write('MERGE: new files will be added, and the listed matching files will be replaced with extracted source files.\n'
+    + 'Destination-only files and folders will be kept, including files absent from the latest export.\n'
+    + 'Choose y/yes to approve this project, or n/Enter to skip the entire project without changes.\n');
   const readline = createInterface({ input, output });
   let inputClosed = false;
   const closed = new Promise<string>((resolve) => readline.once('close', () => {

@@ -407,6 +407,7 @@ test('retains a recovery backup if both publication and restoration copies fail'
 test('sync preparation reads Documents and Photos from the refreshed clean-name extraction parent', async (t) => {
   const f = await fixture(t);
   const syncRoot = path.join(f.root, 'sync_ups');
+  await fs.mkdir(path.join(syncRoot, 'Custom_name'), { recursive: true });
   await fs.writeFile(f.zipPath, makeZip([
     { name: 'Original-project/Documents/nested/file.txt', contents: 'document' },
     { name: 'Original-project/Photos/site.jpg', contents: 'photo' },
