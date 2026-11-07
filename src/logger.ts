@@ -26,7 +26,8 @@ function formatContext(context?: LogContext): string {
       let formattedValue: string;
 
       try {
-        formattedValue = typeof value === 'string' ? value : JSON.stringify(value, null, 2);
+        formattedValue = typeof value === 'string' && key !== 'projectName'
+          ? value : JSON.stringify(value, null, 2);
       } catch {
         formattedValue = '[unserializable]';
       }

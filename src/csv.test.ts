@@ -29,6 +29,21 @@ test('reads the new schema, quoted names, optional IDs/dates, and disabled rows'
   ]);
 });
 
+test('preserves project_name exactly while trimming other configured fields', async (t) => {
+  for (const [field, projectName] of [
+    [' Project  Name ', ' Project  Name '],
+    ['\tProject\t', '\tProject\t'],
+    ['" Project, ""One"" "', ' Project, "One" '],
+    ['"\u00a0Cafe\u0301\u00a0"', '\u00a0Cafe\u0301\u00a0'],
+  ]) {
+    const file = await fixture(t, `${headers}\n uid-1 ,${field}, Clean , TRUE , 2026-01-01 , \n`);
+    assert.deepEqual(await readProjects(file), [{
+      projectUid: 'uid-1', projectName, projectCleanName: 'Clean', enabled: true,
+      startDate: '2026-01-01', endDate: undefined,
+    }]);
+  }
+});
+
 test('rejects the old schema rather than deriving an output name', async (t) => {
   const file = await fixture(t, 'project_number,project_name,enabled,start_date,end_date\n1,Project,true,,');
   await assert.rejects(readProjects(file), /must contain project_uid, project_name, project_clean_name and enabled/);
@@ -55,6 +70,8 @@ test('rejects output collisions for enabled projects, including case and Unicode
 test('still validates project names, enabled flags, dates, and duplicate headers', async (t) => {
   for (const [content, error] of [
     [`${headers}\n1,,Clean,true,,`, /project_name is required/],
+    [`${headers}\n1,   ,Clean,true,,`, /project_name is required/],
+    [`${headers}\n1," \t ",Clean,true,,`, /project_name is required/],
     [`${headers}\n1,Project,Clean,yes,,`, /enabled must be true or false/],
     [`${headers}\n1,Project,Clean,true,01-01-2026,`, /start_date must use YYYY-MM-DD/],
     [`${headers},project_name\n1,Project,Clean,true,,,Other`, /duplicate column names/],

@@ -1,4 +1,79 @@
-project_uid,project_name,project_clean_name,enabled,start_date,end_date
-37a7754b-834c-50c2-1861-0db68d357732,Grainger 101410.01 ROW Plans,Grainger 101410.01 ROW Plans,true,2000-01-01,
-5cf384ee-a1a6-4ee2-8400-f0f8acd22354,CNY188 - 124154.00 - Chester,CNY188 - 124154.00 - Chester,true,2000-01-01,
-d3a2d050-a020-6ce1-88f0-a1b357d7f941,DB2505 - I-24 at Epps Mill/Buchanan Road,DB2505 - I-24 at Epps Mill_Buchanan Road,false,,
+project_uid,project_name,project_clean_name,enabled,start_date,end_date,action
+a8c48904-2abd-6b29-9e46-21947aaaed2f,cnu910,cnu910,true,2000-01-01,,Migrate - Final Estimate Paid
+6f67fd1d-9d88-4e65-99bb-55d6ddf38dbf,PIN 124660.00 Washington Sr 353,PIN 124660.00 Washington Sr 353,true,2000-01-01,,Migrate - Final Estimate Paid
+04c843e3-f5c3-3cf8-d53c-bff32c0e7d88,Carter PIN#043975.01,Carter PIN#043975.01,true,2000-01-01,,Migrate - Final Estimate Paid
+1427f6ed-d571-cc6e-e0fb-f3195d90d71c,124928,124928,true,2000-01-01,,Migrate - Final Estimate Paid
+e9cea8e5-d751-dc66-5c66-12eff75dd18e,129769.00 Greene Count Bridge Repair ove Lick Creek ,129769.00 Greene Count Bridge Repair ove Lick Creek,true,2000-01-01,,Migrate - Final Estimate Paid
+bbf769a3-f971-b993-7848-ea507b7a104b,129455.00 ROW Field Review Grainger County ,129455.00 ROW Field Review Grainger County,true,2000-01-01,,Migrate - Final Estimate Paid
+16956c30-6c1b-8633-27ca-4a7e0b3e55be,CNT014,CNT014,true,2000-01-01,,Migrate - Final Estimate Paid
+3099c93d-3bea-b1f2-805b-e786eacc8400,PIN#123826.00,PIN#123826.00,true,2000-01-01,,Migrate - Final Estimate Paid
+3d8d223c-0d20-29dc-1eb8-64f25e1d6a0f,Jefferson 121459.00,Jefferson 121459.00,true,2000-01-01,,Migrate - Final Estimate Paid
+902a19f1-ce3b-6545-79ac-b9c9676a05d1,field review check 121820.00,field review check 121820.00,true,2000-01-01,,Migrate - Final Estimate Paid
+78047dd7-0675-e625-e9d2-27780e63a57f,CNR295 Widening,CNR295 Widening,true,2000-01-01,,Migrate - Final Estimate Paid
+46a55b91-7625-a8b0-2be6-dd486b73e960,CNV230,CNV230,true,2000-01-01,,Migrate - Final Estimate Paid
+d5fd2eda-caa6-65b0-e00a-d63323ebfb7f,SIA Blount PIN#123033.00,SIA Blount PIN#123033.00,true,2000-01-01,,Migrate - Final Estimate Paid
+6fc7d6d6-96bf-099a-d726-d1d6ad90fe20,Campbell County PIN# 131383.00 ,Campbell County PIN# 131383.00,true,2000-01-01,,Migrate - Final Estimate Paid
+01356639-3e8b-4d9b-7144-49a6450e036f,"Scott County S.R. 29 (U.S. 27, Alberta Street): From Litton Road to North of Sheppard Road in Oneida (PIN: 128844.00)","Scott County S.R. 29 (U.S. 27, Alberta Street)_ From Litton Road to North of Sheppard Road in Oneida (PIN_ 128844.00)",true,2000-01-01,,Migrate - Final Estimate Paid
+32188fe9-c5d7-4741-278b-10acbbb8aade,cnx146,cnx146,true,2000-01-01,,Migrate - Final Estimate Paid
+b1ad0ac1-d433-5e29-a20e-0922e4f9cc4b,CMGC03 Construction Plans,CMGC03 Construction Plans,true,2000-01-01,,Migrate - Final Estimate Paid
+de7eb8e1-0c53-51f3-a8e1-518dcfcf34a2,CMGC03 SWPPP,CMGC03 SWPPP,true,2000-01-01,,Migrate - Final Estimate Paid
+23954514-0657-557e-b55a-0005e58a06d2,CMGC03,CMGC03,true,2000-01-01,,Migrate - Final Estimate Paid
+2883d470-1204-547b-9f0e-465b89e0e543,3/25/2020 DB1801 Ramp Profile Revision Set (2),3_25_2020 DB1801 Ramp Profile Revision Set (2),true,2000-01-01,,Migrate - Final Estimate Paid
+6c9b33c7-c389-57e7-95c6-198a4fdb069f,DB1801 Lighting RFC Plans,DB1801 Lighting RFC Plans,true,2000-01-01,,Migrate - Final Estimate Paid
+ee4a7749-828f-5b63-bfb1-c783020b4530,DB1801 ITS Compliance Forms,DB1801 ITS Compliance Forms,true,2000-01-01,,Migrate - Final Estimate Paid
+aa5a3ffb-5b72-52cb-a9ea-431552deaeed,CNT110 test functions,CNT110 test functions,true,2000-01-01,,Migrate - Final Estimate Paid
+75385abb-d6f6-5ed2-9fb9-92ddf9aa9f33,CNT259 COOKEVILLE CONSTRUCTION,CNT259 COOKEVILLE CONSTRUCTION,true,2000-01-01,,Migrate - Final Estimate Paid
+013c3a7f-16ee-4684-94ae-0ec60914d046,CNY062_Cloned,CNY062_Cloned,true,2000-01-01,,Migrate - Final Estimate Paid
+451b1356-a52e-8c2d-5e14-88df83880ade,cnx 153,cnx 153,true,2000-01-01,,Migrate - Final Estimate Paid
+47458569-682b-f75f-3bea-c44feab785d4,CNX342,CNX342,true,2000-01-01,,Migrate - Final Estimate Paid
+46356a81-2810-6783-948d-075578a654fb,"Crack Seal, Region 2, PIN 134763.00","Crack Seal, Region 2, PIN 134763.00",true,2000-01-01,,Migrate - Final Estimate Paid
+d4185488-ddff-5057-a02a-160dc5f5a0e7,CNU156,CNU156,true,2000-01-01,,Migrate - Final Estimate Paid
+2fcede16-9bfb-12f4-046a-4c0b122cf7b0,Marion SR283 CIR 132856,Marion SR283 CIR 132856,true,2000-01-01,,Migrate - Final Estimate Paid
+a3f5cb89-31f2-5e1d-0d53-4c226dbda55f,CNQ270  COLLINS RIVER BRIDGE,CNQ270  COLLINS RIVER BRIDGE,true,2000-01-01,,Migrate - Final Estimate Paid
+783f0517-2388-876e-c5bc-f0f8c864f8a5,CNT011 DEKALB/WARREN PROJECT,CNT011 DEKALB_WARREN PROJECT,true,2000-01-01,,Migrate - Final Estimate Paid
+30d3f8f5-d5bf-e12f-8e16-346f4986df9b,CNU011 Walls,CNU011 Walls,true,2000-01-01,,Migrate - Final Estimate Paid
+478d89a6-e8d0-2013-3f6b-725726a2b042,CNV909,CNV909,true,2000-01-01,,Migrate - Final Estimate Paid
+01975527-0689-c590-f1cc-443adfd67d89,124080.01 Hamilton SR8 Emergency Wall,124080.01 Hamilton SR8 Emergency Wall,true,2000-01-01,,Migrate - Final Estimate Paid
+3b84c4a2-b51a-ba72-58d8-e9e1d72c57b5,"**OLD 2023 Review** PIN 131781.00, Rhea, Resurfacing of SR29, Final Plans Review","__OLD 2023 Review__ PIN 131781.00, Rhea, Resurfacing of SR29, Final Plans Review",true,2000-01-01,,Migrate - Final Estimate Paid
+e8c508cf-c880-e7f0-9b75-a25f90fef78c,CNX343,CNX343,true,2000-01-01,,Migrate - Final Estimate Paid
+64de4753-61ff-1378-b44d-6b9eb5bca8c1,D29 ROW Field Review Pin 124092.00 Meigs W Memorial Dr Bridge over Decatur Branch,D29 ROW Field Review Pin 124092.00 Meigs W Memorial Dr Bridge over Decatur Branch,true,2000-01-01,,Migrate - Final Estimate Paid
+baa50f5d-f95d-1060-339f-070dd9020a3a,135278.00 McCallie Tunnel Lighting Upgrade,135278.00 McCallie Tunnel Lighting Upgrade,true,2000-01-01,,Migrate - Final Estimate Paid
+3d059bff-35ec-48b9-acae-664404ca0be4,Bradley SR60 Constructability Review Plans PIN 101430.01,Bradley SR60 Constructability Review Plans PIN 101430.01,true,2000-01-01,,Migrate - Final Estimate Paid
+375692ca-4307-572f-bae9-e9ee2bc45c39,CNV130 Field Comments,CNV130 Field Comments,true,2000-01-01,,Migrate - Final Estimate Paid
+a5a10179-d9af-5c94-b814-5f60c120ab7e,CNV130 Final TCP,CNV130 Final TCP,true,2000-01-01,,Migrate - Final Estimate Paid
+5d4a5810-6a94-5d3f-a2d3-cc4012de3b04,CNV130 Chatt Gas Installation Tracking,CNV130 Chatt Gas Installation Tracking,true,2000-01-01,,Migrate - Final Estimate Paid
+0d09755f-14e0-5c5a-95f8-44fb7650dca4,CNV130 CU Power & Lighting Installation Tracking,CNV130 CU Power & Lighting Installation Tracking,true,2000-01-01,,Migrate - Final Estimate Paid
+67fc7a82-a98e-52be-9d69-dc3e9a43c3fa,CNV130 CU Sewer Installation Tracking,CNV130 CU Sewer Installation Tracking,true,2000-01-01,,Migrate - Final Estimate Paid
+89f168e1-c469-5195-8c8e-f0fca301701b,CNV130 CU Water Installation Tracking,CNV130 CU Water Installation Tracking,true,2000-01-01,,Migrate - Final Estimate Paid
+40889ac3-0198-5a3a-9ec9-df5f843d0e87,CNV130 VEC Power & Fiber Installation Tracking,CNV130 VEC Power & Fiber Installation Tracking,true,2000-01-01,,Migrate - Final Estimate Paid
+bc4ae217-b2e7-5739-a18f-27bdc8add06d,CNV130 BOP Traffic Control Phase 2,CNV130 BOP Traffic Control Phase 2,true,2000-01-01,,Migrate - Final Estimate Paid
+d7b2cdf6-2fb0-50d0-a05a-aa455b367c28,CNV130 Storm Drain Installation Tracking,CNV130 Storm Drain Installation Tracking,true,2000-01-01,,Migrate - Final Estimate Paid
+a34f37eb-f826-5605-befe-1556f57d1ecf,CNV301 Plans,CNV301 Plans,true,2000-01-01,,Migrate - Final Estimate Paid
+7c355ca8-dbb4-4421-942d-bb9e9246f6d4,D29 Review McMinn SR163 Bridge Repair Chestuee Creek 131163.00,D29 Review McMinn SR163 Bridge Repair Chestuee Creek 131163.00,true,2000-01-01,,Migrate - Final Estimate Paid
+47d20dc3-8f48-5206-9617-8d47722a97a7,TDOT Standard Drawings for CNW912,TDOT Standard Drawings for CNW912,true,2000-01-01,,Migrate - Final Estimate Paid
+704ab173-fc2a-7c16-2932-3d2f12463f61,D29 Construction Review Pin 115684.00 Polk SR68 Brush Creek Bridge Repl.,D29 Construction Review Pin 115684.00 Polk SR68 Brush Creek Bridge Repl,true,2000-01-01,,Migrate - Final Estimate Paid
+d34168d3-c456-5f96-b45d-19b074f8e778,DB1802 Construction NTP #1,DB1802 Construction NTP #1,true,2000-01-01,,Migrate - Final Estimate Paid
+1163bbd1-898b-51af-905b-32a2e17239f9,DB1802 Construction NTP #1A,DB1802 Construction NTP #1A,true,2000-01-01,,Migrate - Final Estimate Paid
+59980e4f-9ef7-c713-0abe-90bf06433bcc,CNS 309,CNS 309,true,2000-01-01,,Migrate - Final Estimate Paid
+2cbac8cc-ba2f-512d-843f-3120c11b1908,CNX369 3721,CNX369 3721,true,2000-01-01,,Migrate - Final Estimate Paid
+81a05b88-5bd9-dcb1-a7ed-a65f912b339a,CNY064,CNY064,true,2000-01-01,,Migrate - Final Estimate Paid
+158f8187-8e4a-c598-42dc-e57b03132522,CNU032,CNU032,true,2000-01-01,,Migrate - Final Estimate Paid
+0636cc15-7444-c703-30ae-955c793e3a1c,D29 ROW Field Review Pin 130703.00 Meigs SR60 Small Structure Replacement,D29 ROW Field Review Pin 130703.00 Meigs SR60 Small Structure Replacement,true,2000-01-01,,Migrate - Final Estimate Paid
+6a758b9f-52d1-840a-484b-d60da9974dee,CNS040,CNS040,true,2000-01-01,,Migrate - Final Estimate Paid
+fc3a76c8-73ba-587a-21ad-b47baaabf8e2,PS&E Final Check PIN 130494.00 Dickson County SIA Serving Project DV,PS&E Final Check PIN 130494.00 Dickson County SIA Serving Project DV,true,2000-01-01,,Migrate - Final Estimate Paid
+81839599-0b4d-c291-f42a-7df9f28901d7,CNV248,CNV248,true,2000-01-01,,Migrate - Final Estimate Paid
+cff04a51-51ea-569c-8a77-9fbf7432db82,CNW153,CNW153,true,2000-01-01,,Migrate - Final Estimate Paid
+e5b28de8-33dd-4acf-02af-ac6058a429a1,CNX228,CNX228,true,2000-01-01,,Migrate - Final Estimate Paid
+e417eb89-18b1-5c2b-a70a-972b33ed26c5,CNX315,CNX315,true,2000-01-01,,Migrate - Final Estimate Paid
+4695a5e2-9501-bac3-961b-fceb59468873,CNY199,CNY199,true,2000-01-01,,Migrate - Final Estimate Paid
+9ec994e8-17cd-0f7e-6b26-b727502f36bc,CNT037,CNT037,true,2000-01-01,,Migrate - Final Estimate Paid
+06c6570e-e183-436b-ba70-bb77fd670abd,Contract # CNS300,Contract # CNS300,true,2000-01-01,,Migrate - Final Estimate Paid
+2fbc3ca9-e0e1-5237-b675-1b8f4d2439bb,TDOT CNR277,TDOT CNR277,true,2000-01-01,,Migrate - Final Estimate Paid
+b1890d1a-5050-0161-d757-4a0dcbc93f3f,CNX055,CNX055,true,2000-01-01,,Migrate - Final Estimate Paid
+034ddb8d-3e69-532c-b9fe-43e874ed9fe8,CNT355 Box Comp,CNT355 Box Comp,true,2000-01-01,,Migrate - Final Estimate Paid
+5da0f42b-b2cd-819e-1959-7bdf8c748a2b,cnt359,cnt359,true,2000-01-01,,Migrate - Final Estimate Paid
+cad60294-6863-39a9-b560-ed3ad1dac926,PIN125200.00,PIN125200.00,true,2000-01-01,,Migrate - Final Estimate Paid
+d541d612-a9e7-7317-2ce5-f81e7b39a74e,CNX298,CNX298,true,2000-01-01,,Migrate - Final Estimate Paid
+35c399b3-d843-caa3-69ae-7af8c1c26c03,CNW341,CNW341,true,2000-01-01,,Migrate - Final Estimate Paid
+84c5ae61-51fe-a5a1-cc79-b80d5c5256c2,CNX239,CNX239,true,2000-01-01,,Migrate - Final Estimate Paid
+83ff243f-5873-8abb-8402-6ad6b456e3a0,CNX289,CNX289,true,2000-01-01,,Migrate - Final Estimate Paid

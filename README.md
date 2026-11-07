@@ -81,15 +81,19 @@ project-12345,Another Project,Another_Project,true,2026-01-01,2026-08-31
 project-12346,Disabled Project,Disabled_Project,false,,
 ```
 
-The CSV must contain `project_uid`, `project_name`, `project_clean_name`, and `enabled` columns. Use the six-column header above; it replaces the old `project_number` header.
+The CSV must contain `project_uid`, `project_name`, `project_clean_name`, and `enabled` columns; `start_date` and `end_date` are optional. Column order may vary, and extra columns such as `action` are accepted and ignored. Header names must be unique, and every row must contain the same number of fields as the header, including blank fields. The example above replaces the old `project_number` header.
 
 | Column | Purpose |
 | --- | --- |
 | `project_uid` | Project identifier used in logs. May be blank; project selection still uses `project_name`. |
-| `project_name` | Required original PlanGrid project name, used to search for the project. |
+| `project_name` | Required full PlanGrid project name, preserved exactly for search and selection, including capitalization and all whitespace. |
 | `project_clean_name` | Required folder name and ZIP base name, without the `.zip` extension. |
 | `enabled` | Required `true` or `false`; disabled projects are skipped. |
 | `start_date`, `end_date` | Optional dates in `YYYY-MM-DD` format. Blank values leave platform defaults unchanged. |
+
+`project_name` is the source of truth and is never trimmed or normalized. Include any leading/trailing spaces that exist in PlanGrid's name. CSV quotes are syntax, so `"Project, One "` produces the project name `Project, One` followed by one space, without the surrounding quotes. Empty or whitespace-only names are rejected.
+
+The workflows only read this CSV; they do not rewrite it or automatically change `enabled` after a project succeeds or fails.
 
 `project_clean_name` is used as entered after trimming surrounding whitespace; it is no longer generated from `project_name`. Spaces, hyphens, underscores, and periods within a name are preserved. Use a single folder/file base name: do not include paths, slashes, `<>:"\\|?*`, control characters, trailing periods, or Windows-reserved names such as `CON` or `NUL`. Invalid names stop the run before the browser starts. Clean names must be unique among enabled projects, ignoring case and equivalent Unicode forms, to prevent output collisions. Quote any CSV value containing commas.
 
@@ -145,7 +149,11 @@ After authentication, the first enabled project reuses the projects page when it
 | Extra settling before entering the project name | Fixed 5 seconds |
 | Search entry, matching row, and opening that row | Up to 30 seconds per operation |
 
-The maximum waits finish early when their condition is met. A navigation/readiness error fails that project; a project match that does not appear within the search wait is logged as skipped. The script logs the result and continues to the next CSV project, whose next enabled entry opens the landing page again. It does not automatically retry an entire export, which could request duplicate builds. Failed projects produce a nonzero exit status after all entries have been processed; authentication/startup failures still stop exports before the loop. These waits leave the authentication and Kahua timing rules unchanged.
+Search may return several projects. The script enters the CSV's unchanged `project_name` into the search field and matches it against each project link's `title` attribute, which contains the project name without its address or workspace text. Matching is case-sensitive, and all whitespace, including leading/trailing spaces, must match exactly. It opens the row only when exactly one project has that full name; partial-name results do not make the selection ambiguous. For example, searching for `cnu910` opens `cnu910` even if `ZZ CNU910-128725.00 - Hawkins Co. SR70, Slope Stabilization` also appears. If no exact match becomes visible within 30 seconds, or multiple rows have the exact same name, the project is marked **FAILED** without clicking a row. Disabled CSV rows remain **SKIPPED**.
+
+The maximum waits finish early when their condition is met. Navigation/readiness and project-selection errors fail that project. The script logs the result and continues to the next CSV project, whose next enabled entry opens the landing page again. It does not automatically retry an entire export, which could request duplicate builds. Failed projects produce a nonzero exit status after all entries have been processed; authentication/startup failures still stop exports before the loop. These waits leave the authentication and Kahua timing rules unchanged.
+
+Build-progress logs include both `projectUid` and the actual `projectName`, alongside the percentage and status. The logger encloses `projectName` in double quotes, preserving spaces and escaping any quotes within the name, in both console and file output. This is display formatting only; the name used for search and matching is unchanged.
 
 Download logs show **Clicking Download**, then **ZIP download started; saving to destination**. **As-built ZIP saved** appears only after saving finishes. If transfer or saving takes longer, status messages report elapsed minutes at **10, 20, 40, 80… minutes since the download click**, with gaps eventually capped at 24 hours. These messages are informational: they do not change the download, retry it, impose a transfer timeout, or affect build-progress polling. Updates stop when saving succeeds or the download operation fails.
 
@@ -408,7 +416,7 @@ npm run test:drawings
 npm run test:import
 ```
 
-These checks use local tests and temporary fixtures; they do not launch a real login/export run or copy your downloaded projects. Run the checks relevant to your changes. `test:export` checks CSV parsing and simulated first-time/recurring export requests, checkbox verification, whole-table ID snapshots (including processing builds), ambiguity rejection, stable-ID polling despite reordered rows, conservative status handling, rejection of older downloads, initial-page reuse and readiness waits, recovery after project failures, download naming, and transfer-status scheduling/cleanup with a simulated clock; `test:unzip` checks extraction; `test:sync` checks Documents/Photos copying; `test:drawings` checks copying everything else; `test:import` checks Part B local preparation.
+These checks use local tests and temporary fixtures; they do not launch a real login/export run or copy your downloaded projects. Run the checks relevant to your changes. `test:export` checks CSV parsing, exact project-name selection among similar results, missing/duplicate exact-name failures, and simulated first-time/recurring export requests, checkbox verification, whole-table ID snapshots (including processing builds), ambiguity rejection, stable-ID polling despite reordered rows, conservative status handling, rejection of older downloads, initial-page reuse and readiness waits, recovery after project failures, download naming, and transfer-status scheduling/cleanup with a simulated clock; `test:unzip` checks extraction; `test:sync` checks Documents/Photos copying; `test:drawings` checks copying everything else; `test:import` checks Part B local preparation.
 
 ### Part B — Kahua import (in development)
 

@@ -30,7 +30,7 @@ function parseOptionalDate(value: string, fieldName: string, rowNumber: number):
 
 export async function readProjects(filePath: string): Promise<Project[]> {
   const content = await fs.readFile(filePath, 'utf8');
-  const rows: string[][] = parse(content, { bom: true, trim: true, skip_empty_lines: true });
+  const rows: string[][] = parse(content, { bom: true, trim: false, skip_empty_lines: true });
 
   if (rows.length === 0) return [];
 
@@ -52,9 +52,10 @@ export async function readProjects(filePath: string): Promise<Project[]> {
   const enabledCleanNames = new Set<string>();
   return rows.map((row, index) => {
     const rowNumber = index + 2;
-    const values = row.map((value) => value.trim());
+    // project_name is PlanGrid's exact name; trim only the other configuration fields.
+    const values = row.map((value, columnIndex) => columnIndex === nameIndex ? value : value.trim());
     const projectName = values[nameIndex] ?? '';
-    if (!projectName) {
+    if (/^\s*$/u.test(projectName)) {
       throw new Error(`CSV row ${rowNumber}: project_name is required`);
     }
     const projectCleanName = values[cleanNameIndex] ?? '';

@@ -6,7 +6,7 @@ import { logError, logger, type LogContext } from './logger.js';
 import { PROJECT_SELECTORS, URLS } from '../utils/constants.js';
 import type { Project, ProjectResult } from './types.js';
 
-async function selectProject(page: Page, project: Project): Promise<boolean> {
+async function selectProject(page: Page, project: Project): Promise<void> {
   const searchTerm = project.projectName;
   const searchInput = page.locator(PROJECT_SELECTORS.searchInput);
 
@@ -14,39 +14,32 @@ async function selectProject(page: Page, project: Project): Promise<boolean> {
   await searchInput.fill(searchTerm, { timeout: timeouts.projectsReadyMs });
 
   const rows = page.locator(PROJECT_SELECTORS.projectRows);
-  const matchingRows = rows.filter({ hasText: searchTerm });
+  // Each project link's title contains only its full name, without addresses or workspace text.
+  const matchingRows = rows.and(page.getByTitle(searchTerm, { exact: true }));
   try {
     await matchingRows.first().waitFor({ state: 'visible', timeout: timeouts.projectsReadyMs });
-  } catch {
-    logger.warn('Project match not found', {
-      projectName: project.projectName,
-      searchTerm,
-      reason: 'No matching project rows became visible after searching',
-      waitTimeoutMs: timeouts.projectsReadyMs,
-    });
-    return false;
+  } catch (error) {
+    throw new Error(
+      `No project row with exact name "${searchTerm}" became visible within ${timeouts.projectsReadyMs / 1000} seconds`,
+      { cause: error },
+    );
   }
 
   const matchingCount = await matchingRows.count();
   if (matchingCount === 0) {
-    logger.warn('Project match not found', {
-      projectName: project.projectName,
-      searchTerm,
-      reason: 'Visible project rows did not contain the project name',
-    });
-    return false;
+    throw new Error(`No project row with exact name "${searchTerm}" was found after searching`);
   }
   if (matchingCount > 1) {
     throw new Error(
-      `Multiple project rows matched project name "${searchTerm}"; refusing to select an ambiguous result `
+      `Multiple project rows have the exact name "${searchTerm}"; refusing to select an ambiguous result `
         + `(matchingCount: ${matchingCount})`,
     );
   }
 
-  logger.info('Opening matching project', { searchTerm, matchingCount });
-  await matchingRows.first().click({ timeout: timeouts.projectsReadyMs });
+  logger.info('Opening project with exact name match', { searchTerm, matchingCount });
+  // Retain strict clicking so a newly appearing duplicate cannot silently select the first row.
+  await matchingRows.click({ timeout: timeouts.projectsReadyMs });
   await page.waitForLoadState('domcontentloaded');
-  return true;
 }
 
 function startDownloadStatusUpdates(context: LogContext): () => void {
@@ -155,6 +148,7 @@ async function waitForAsBuiltDownload(
   let lastUnknownStatus: string | undefined;
   logger.info('Waiting for As-built export to reach 100%; no time limit is applied', {
     projectUid: project.projectUid,
+    projectName: project.projectName,
     buildId,
     pollIntervalMs: timeouts.progressPollMs,
   });
@@ -179,6 +173,7 @@ async function waitForAsBuiltDownload(
     if (state !== lastState) {
       logger.info('As-built export status', {
         projectUid: project.projectUid,
+        projectName: project.projectName,
         buildId,
         progress,
         status,
@@ -190,6 +185,7 @@ async function waitForAsBuiltDownload(
     if (progress === '100%' && downloadVisible) {
       logger.success('As-built export is ready for download', {
         projectUid: project.projectUid,
+        projectName: project.projectName,
         buildId,
         progress,
       });
@@ -275,16 +271,7 @@ export async function exportProject(
     await page.waitForTimeout(timeouts.projectsPageSettleMs);
     logger.info('Projects landing page ready for project search', { projectName: project.projectName });
 
-    const projectSelected = await selectProject(page, project);
-    if (!projectSelected) {
-      return {
-        project,
-        status: 'SKIPPED',
-        message: 'Project name was not found on the landing page',
-        downloadDirectory,
-        durationMs: Date.now() - startedAt,
-      };
-    }
+    await selectProject(page, project);
 
     logger.info('Opening project Settings');
     await page.locator(PROJECT_SELECTORS.settingsLink).click();
