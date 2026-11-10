@@ -8,6 +8,7 @@ import type { Logger } from '../logger.js';
 import { prepareSync } from './prepare.js';
 import type { OverwriteRequest } from './prepare.js';
 import { confirmSyncOverwrite } from './confirmation.js';
+import { summarizeLocalResults } from '../local-results.js';
 
 const headers = 'project_uid,project_name,project_clean_name,enabled,start_date,end_date';
 const quietLogger: Logger = { general() {}, info() {}, debug() {}, success() {}, warn() {}, error() {} };
@@ -62,16 +63,24 @@ test('copies either folder directly under the extraction parent, including empty
   }
 });
 
-test('skips disabled projects and absent folders, reports missing extraction, and continues', async (t) => {
+test('skips disabled projects, missing extraction roots and absent content, and continues', async (t) => {
   const f = await fixture(t, [
     '1,Disabled,Disabled,false,,', '2,Missing,Missing,true,,',
-    '3,No matching folders,Empty,true,,', '4,Good project,Custom_name,true,,',
+    '3,No matching folders,Empty,true,,', '4,Missing inner extraction,NoExtraction,true,,',
+    '5,Good project,Custom_name,true,,',
   ].join('\n'));
   await fs.mkdir(path.join(f.downloads, 'Empty/Empty'), { recursive: true });
+  await fs.mkdir(path.join(f.downloads, 'NoExtraction'));
   await write(path.join(f.extraction, 'Documents/file.txt'), 'document');
   const results = await prepareSync(f.input, f.downloads, f.syncRoot, quietLogger);
-  assert.deepEqual(results.map((result) => result.status), ['SKIPPED', 'FAILED', 'SKIPPED', 'SUCCESS']);
+  assert.deepEqual(results.map((result) => result.status), ['SKIPPED', 'SKIPPED', 'SKIPPED', 'SKIPPED', 'SUCCESS']);
+  assert.deepEqual(summarizeLocalResults(results), {
+    total: 5, success: 1, skipped: 4, failed: 0,
+    skippedByReason: { DISABLED: 1, MISSING_EXTRACTION: 2, NO_MATCHING_FOLDER: 1 }, failedProjects: [],
+  });
   assert.deepEqual(await fs.readdir(f.syncRoot), ['Custom_name']);
+  await assert.rejects(fs.stat(path.join(f.downloads, 'Missing')), { code: 'ENOENT' });
+  assert.deepEqual(await fs.readdir(path.join(f.downloads, 'NoExtraction')), []);
 });
 
 test('rejects ambiguous wrappers instead of merging their contents', async (t) => {
@@ -136,6 +145,10 @@ test('declining skips the complete project without copying new files and continu
   await fs.mkdir(path.join(f.syncRoot, 'Next'));
   const results = await prepareSync(f.input, f.downloads, f.syncRoot, quietLogger, async () => false);
   assert.deepEqual(results.map((result) => result.status), ['SKIPPED', 'SUCCESS']);
+  assert.deepEqual(summarizeLocalResults(results), {
+    total: 2, success: 1, skipped: 1, failed: 0,
+    skippedByReason: { OVERWRITE_DECLINED: 1 }, failedProjects: [],
+  });
   assert.equal(await fs.readFile(path.join(f.destination, 'Documents/existing.txt'), 'utf8'), 'keep destination');
   await assert.rejects(fs.stat(path.join(f.destination, 'Photos')), { code: 'ENOENT' });
   assert.equal(await fs.readFile(path.join(f.syncRoot, 'Next/Documents/next.txt'), 'utf8'), 'next project');
@@ -158,10 +171,15 @@ test('keeps an approved destination intact when its incoming copy fails', async 
   const f = await fixture(t);
   await write(path.join(f.extraction, 'Documents/file.txt'), 'source');
   await write(path.join(f.destination, 'Documents/file.txt'), 'keep original');
-  t.mock.method(fs, 'copyFile', async () => { throw new Error('Simulated copy failure'); });
+  t.mock.method(fs, 'copyFile', async () => {
+    throw Object.assign(new Error('Simulated copy failure'), { code: 'ENOENT' });
+  });
   const [result] = await prepareSync(f.input, f.downloads, f.syncRoot, quietLogger, async () => true);
   assert.equal(result.status, 'FAILED');
   assert.match(result.message!, /Simulated copy failure/);
+  assert.deepEqual(summarizeLocalResults([result]), {
+    total: 1, success: 0, skipped: 0, failed: 1, skippedByReason: {}, failedProjects: ['Custom_name'],
+  });
   assert.equal(await fs.readFile(path.join(f.destination, 'Documents/file.txt'), 'utf8'), 'keep original');
   assert.deepEqual(await fs.readdir(path.join(f.destination, 'Documents')), ['file.txt']);
 });

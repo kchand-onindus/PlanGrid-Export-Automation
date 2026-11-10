@@ -7,6 +7,7 @@ import { connectToExistingChrome } from './chrome-session.js';
 import { readProjects } from './csv.js';
 import { logError, logger, logFilePath, wasErrorLogged } from './logger.js';
 import { exportProject } from './project-exporter.js';
+import { logExportSummary } from './export-summary.js';
 
 async function main(): Promise<void> {
   let browser: Browser | undefined;
@@ -80,6 +81,7 @@ async function main(): Promise<void> {
         projectName: project.projectName,
         projectCleanName: project.projectCleanName,
         status: result.status,
+        errorType: result.errorType,
         durationMs: result.durationMs,
         message: result.message,
         downloadDirectory: result.downloadDirectory,
@@ -111,17 +113,10 @@ async function main(): Promise<void> {
       await logout(page);
     }
 
-    const successful = results.filter((result) => result.status === 'SUCCESS').length;
-    const skipped = results.filter((result) => result.status === 'SKIPPED').length;
     const failed = results.filter((result) => result.status === 'FAILED').length;
     if (failed > 0) process.exitCode = 1;
 
-    logger.general('Export run completed', {
-      total: results.length,
-      success: successful,
-      skipped,
-      failed,
-    });
+    logExportSummary(results);
   } catch (error) {
     // Log the actual failure before the browser cleanup starts.
     if (!wasErrorLogged(error)) {

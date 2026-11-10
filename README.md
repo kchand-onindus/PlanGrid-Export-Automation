@@ -157,6 +157,10 @@ Build-progress logs include both `projectUid` and the actual `projectName`, alon
 
 Download logs show **Clicking Download**, then **ZIP download started; saving to destination**. **As-built ZIP saved** appears only after saving finishes. If transfer or saving takes longer, status messages report elapsed minutes at **10, 20, 40, 80… minutes since the download click**, with gaps eventually capped at 24 hours. These messages are informational: they do not change the download, retry it, impose a transfer timeout, or affect build-progress polling. Updates stop when saving succeeds or the download operation fails.
 
+Project failures have a searchable label such as `[ERROR_TYPE: PROJECT_NOT_FOUND]` in the terminal and log file. Search for `ERROR_TYPE:` to find failure details, or `EXPORT ERROR SUMMARY BY TYPE` for the grouped counts. The final `Export run completed` summary includes `errorsByType`, counting each failed project once even when its error appears in multiple log entries. Types distinguish projects-page readiness, missing/ambiguous project names, project selection, export forms, build identity, failed/error/cancelled builds, build monitoring, downloads, and cleanup. Successes and skipped projects do not add to the error counts; an error-free run shows an empty `errorsByType` object.
+
+The project download folder is created only after the ZIP has finished saving to a temporary `.export-download-*.zip` file under `DOWNLOAD_DIR`. Failed saves remove temporary files; failed publication also removes a newly created empty project folder. Existing ZIPs, extracted files, pre-existing folders, and other projects are preserved on failure. A successful save replaces the project's ZIP while keeping its other contents. If a lock or permission error prevents cleanup, the log reports `DOWNLOAD_CLEANUP_ERROR` and the affected paths. Counts use the project's primary failure type; an additional cleanup error is reported in the failure details.
+
 For later runs, keep Chrome running, keep remote debugging enabled, and reuse the same profile. You do not need to keep a PlanGrid tab open: the script opens the projects page itself. If the session expires, sign in through Chrome again before running. See [Chrome's connection instructions](https://developer.chrome.com/blog/chrome-devtools-mcp-debug-your-browser-session).
 
 ##### Chrome connection notes
@@ -233,11 +237,13 @@ Extraction first builds a temporary replacement and verifies file sizes and chec
 
 The `.unzip-stage-*` and `.unzip-backup-*` steps are deliberate safeguards: invalid archives fail before previous output is cleared, and the backup supports recovery if publication fails. They add disk I/O and temporary space use, but preserve previous output when checksums, unsafe paths, or filesystem filename conflicts prevent a valid extraction.
 
-A corrupt archive or extraction failure retains the previous output. If copying into the final folder fails, the command attempts to restore the previous contents by copying them back; if restoration also fails, it reports the retained backup location for recovery. Windows locks or permissions can still block copying or deletion, and these failures are reported. Temporary cleanup problems are logged. The final folder is populated progressively during copying, so start sync preparation only after unzip reports success. Missing folders/ZIPs, unsafe paths, archive links, and filename collisions within the ZIP still fail that project; the command continues with the remaining projects and exits with a nonzero status if any project fails.
+A corrupt archive or extraction failure retains the previous output. If copying into the final folder fails, the command attempts to restore the previous contents by copying them back; if restoration also fails, it reports the retained backup location for recovery. Windows locks or permissions can still block copying or deletion, and these failures are reported. Temporary cleanup problems are logged. The final folder is populated progressively during copying, so start sync preparation only after unzip reports success. Missing download folders or ZIPs skip the project without attempting extraction. Unsafe paths, archive links, filename collisions, invalid archives, and filesystem errors fail that project; the command continues with the remaining projects and exits with a nonzero status if any project fails.
 
 Archives containing different files such as `9C.pdf` and `9c.pdf` in the same internal folder require a case-sensitive destination to retain both names. The command checks the filesystem through the existing ZIP's filename and reports both conflicting paths before extracting on a case-insensitive destination. Adding the extraction parent does not resolve such conflicts; use a case-sensitive download location and set `DOWNLOAD_DIR` accordingly to preserve these archives exactly.
 
-The command logs per-project results and a final summary to the terminal and `logs/unzip-<timestamp>.log`. Temporary-fixture tests are listed under [Validation commands](#validation-commands).
+The command logs per-project results and a final `UNZIP SUMMARY` to the terminal and `logs/unzip-<timestamp>.log`. All three local commands (`unzip`, `sync:prepare`, and `drawing:prepare`) use the same project counts: `total`, `success`, `skipped`, and `failed`, with `skippedByReason` and the clean names of `failedProjects`. Each summary describes only its current command; earlier export or extraction errors are not carried forward.
+
+For unzip, `success` means extracted, and skips are grouped as `DISABLED` or `MISSING_DOWNLOAD`. Missing downloads are logged as `[UNZIP_SKIP: MISSING_DOWNLOAD]` with extraction not attempted; actual extraction errors use `[UNZIP_ERROR: EXTRACTION_ERROR]`. Temporary `.export-download-*.zip` files are ignored. Skips do not cause a nonzero exit status, even if every project is skipped. Only failures or a startup/input-validation error do. Temporary-fixture tests are listed under [Validation commands](#validation-commands).
 
 #### Step 3: Prepare Documents and Photos for syncing
 
@@ -260,7 +266,7 @@ sync_ups/
     Photos/         # when present in the extracted project
 ```
 
-The source contents and folder names remain unchanged. Only `Documents/` and/or `Photos/` inside that destination project folder can be created or updated; other folders, loose files, and other projects in `sync_ups` remain untouched. Drawings and other source project folders are not copied. Disabled rows and projects with neither folder are skipped; missing extraction folders or destination project folders are reported as failures.
+The source contents and folder names remain unchanged. Only `Documents/` and/or `Photos/` inside that destination project folder can be created or updated; other folders, loose files, and other projects in `sync_ups` remain untouched. Drawings and other source project folders are not copied. Disabled rows, missing extraction roots, and projects with neither folder are skipped. When source contents are available, a missing required destination project folder remains a setup failure; the command never creates it.
 
 Configure the staging root in `.env` (relative paths resolve from this repository):
 
@@ -294,7 +300,7 @@ The preview lists up to ten affected paths and the total count. Enter **`y` or `
 
 Run in an interactive terminal when approving overwrites. A noninteractive run encountering existing files fails that project without copying, rather than assuming approval. Links, special files, and file/directory type conflicts are rejected. If a destination file changes while confirmation is pending, the command stops that project so you can review it again. Approved replacements are copied to a temporary file before replacing the old file. A disk error or filesystem name conflict can still leave a partially completed project; inspect the staging folder before retrying. The command continues with the other projects, logs approval/decline decisions, and exits with a nonzero status if any project fails.
 
-Logs are written to the terminal and `logs/sync-preparation-<timestamp>.log`. The default `sync_ups` contents are ignored by Git. Temporary-folder tests are listed under [Validation commands](#validation-commands).
+Logs are written to the terminal and `logs/sync-preparation-<timestamp>.log`. The final `SYNC PREPARATION SUMMARY` counts successful copies, skipped projects, and failures from this command only. `skippedByReason` distinguishes `DISABLED`, `MISSING_EXTRACTION`, `NO_MATCHING_FOLDER`, and `OVERWRITE_DECLINED`. `NO_MATCHING_FOLDER` means neither Documents nor Photos was found; it is SKIPPED and is not included in `failedProjects`. That list contains only actual failed projects and is empty when none failed. Missing source inputs and other skips do not cause a nonzero exit status; permission, validation, destination-setup, and copying errors remain failures. The default `sync_ups` contents are ignored by Git. Temporary-folder tests are listed under [Validation commands](#validation-commands).
 
 ### Part A output
 
@@ -311,12 +317,12 @@ These commands cover the separate drawings copy, alternative login modes, valida
 ### Prepare Drawings and other project contents
 
 ```bash
-npm run drawings:prepare
+npm run drawing:prepare
 ```
 
 Run after successful `npm run unzip`, from the repository folder on **Windows Command Prompt, Windows PowerShell, macOS, or Linux**. Install dependencies with `npm install` first. This is a separate local copy command using the same `input/projects.csv` and `DOWNLOAD_DIR`; it does not open a browser or upload anything. It can run independently of `sync:prepare` once extraction succeeds.
 
-For each enabled project, it reads `<DOWNLOAD_DIR>/<project_clean_name>/<project_clean_name>/`, creates `<DRAWINGS_DIR>/<project_clean_name>/`, and copies **everything except the project's top-level `Documents` and `Photos` entries**. This includes Drawings, all other folders, loose files such as export reports, nested contents, and empty folders. Folder hierarchy and internal names are preserved; nested folders named Documents or Photos inside an included tree are retained. Sources remain unchanged.
+For each enabled project, it reads `<DOWNLOAD_DIR>/<project_clean_name>/<project_clean_name>/` and fully refreshes `<DRAWINGS_DIR>/<project_clean_name>/` with **everything except the source project's top-level `Documents` and `Photos` entries**. It creates a missing destination project folder. For an existing destination, **all its previous contents are removed**, including destination-only files/folders and stale Documents/Photos. The result contains only the latest eligible source contents: Drawings, all other folders, loose files such as export reports, nested contents, and empty folders. Folder hierarchy and internal names are preserved; nested folders named Documents or Photos inside an included source tree are retained. Sources and other destination projects remain unchanged.
 
 For an older extraction containing only one project wrapper with Documents, Photos, or Drawings, it copies from inside that wrapper. Multiple matching wrappers are rejected as ambiguous. When there are multiple top-level items, their hierarchy and sibling files are retained rather than omitting a wrapper.
 
@@ -332,17 +338,13 @@ drawings/
     <other project files>
 ```
 
-Set `DRAWINGS_DIR` in `.env` to change the destination; relative and absolute examples are in [Configure the environment](#configure-the-environment). The destination must be separate from the extracted project tree. Disabled projects and projects containing only Documents/Photos (or no contents) are skipped. Missing extraction folders fail that project.
+Set `DRAWINGS_DIR` in `.env` to change the destination; relative and absolute examples are in [Configure the environment](#configure-the-environment). The destination must be separate from the extracted project tree. Disabled projects, missing extraction roots, and projects containing only Documents/Photos (or no contents) are skipped.
 
-The same merge behavior and overwrite safeguards as `sync:prepare` apply. Before copying any files for a project with existing matching destination files, the command displays **EXISTING FILES FOUND — REVIEW BEFORE MERGING**, previews the project, destination, count, and up to ten example paths, and explains that matching files will be replaced while destination-only files will be kept. It then asks once:
+Full drawings refresh runs without an overwrite confirmation, including when destination files already exist. Each project's new contents are validated and copied into a temporary `.drawings-stage-*` directory under `DRAWINGS_DIR` before any old destination contents are removed. Existing project contents are copied to a `.drawings-backup-*` directory first. The command rechecks the destination for changes, then clears its contents and copies the fresh staged contents into it. The project directory itself stays in place; directory renames are not used, keeping the flow compatible with Windows. Staging and backup need additional temporary disk space and are removed after completion.
 
-```text
-Overwrite these existing files? [y/N]:
-```
+If copying the replacement fails, the command attempts to restore all previous contents from the backup. A failed first publication removes its incomplete new project folder when possible. If restoration fails, it retains and reports the recovery backup path. Locks or permissions can still block deletion, copying, restoration, or temporary cleanup; each such failure is reported and marks that project FAILED. Links, special files, overlapping source/destination trees, and destination changes during staging are rejected before refreshing. Previous file/directory layouts are replaced with the current source layout. Disabled projects, missing sources, and projects with no eligible contents remain SKIPPED and leave previous output unchanged. Failures do not stop later projects, but cause a nonzero exit status.
 
-Only `y`/`yes` approves replacing the listed files in that project for that run. `n`/`no`, Enter, or closed input skips the entire project unchanged. Noninteractive conflicts fail without copying. New files need no prompt. Unrelated destination files remain, including any Documents/Photos already in the destination. Destinations are rechecked after approval, and approved replacements are staged before replacing existing files. Links, special files, overlapping source/destination trees, and file/directory type conflicts are rejected. A filesystem error can still leave a partially completed project; inspect the destination before retrying. Failures do not stop later projects, but cause a nonzero exit status.
-
-Logs are written to `logs/drawings-preparation-<timestamp>.log` and the terminal. Generated contents in the default `drawings/` folder are ignored by Git. This copy is separate from Part B's drawing-version import preparation.
+Logs are written to `logs/drawings-preparation-<timestamp>.log` and the terminal. The final `DRAWINGS PREPARATION SUMMARY` reports this command's `success`, `skipped`, and `failed` project counts. `skippedByReason` distinguishes `DISABLED`, `MISSING_EXTRACTION`, and `NO_MATCHING_CONTENT`. Success means the full refresh and temporary cleanup completed. Missing source inputs and other skips do not cause a nonzero exit status; failed required steps do. Generated contents in the default `drawings/` folder are ignored by Git. This copy is separate from Part B's drawing-version import preparation.
 
 ### Normal automated login
 
@@ -416,7 +418,7 @@ npm run test:drawings
 npm run test:import
 ```
 
-These checks use local tests and temporary fixtures; they do not launch a real login/export run or copy your downloaded projects. Run the checks relevant to your changes. `test:export` checks CSV parsing, exact project-name selection among similar results, missing/duplicate exact-name failures, and simulated first-time/recurring export requests, checkbox verification, whole-table ID snapshots (including processing builds), ambiguity rejection, stable-ID polling despite reordered rows, conservative status handling, rejection of older downloads, initial-page reuse and readiness waits, recovery after project failures, download naming, and transfer-status scheduling/cleanup with a simulated clock; `test:unzip` checks extraction; `test:sync` checks Documents/Photos copying; `test:drawings` checks copying everything else; `test:import` checks Part B local preparation.
+These checks use local tests and temporary fixtures; they do not launch a real login/export run or copy your downloaded projects. Run the checks relevant to your changes. `test:export` checks CSV parsing, exact project-name selection among similar results, missing/duplicate exact-name failures, and simulated first-time/recurring export requests, checkbox verification, whole-table ID snapshots (including processing builds), ambiguity rejection, stable-ID polling despite reordered rows, conservative status handling, rejection of older downloads, initial-page reuse and readiness waits, recovery after project failures, error labels and summary counts, download naming, failed-download cleanup and preservation of previous output, and transfer-status scheduling/cleanup with a simulated clock; `test:unzip` checks extraction; `test:sync` checks Documents/Photos copying; `test:drawings` checks copying everything else; `test:import` checks Part B local preparation.
 
 ### Part B — Kahua import (in development)
 

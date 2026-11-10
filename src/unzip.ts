@@ -8,7 +8,7 @@ import type { Entry, ZipFile } from 'yauzl';
 import { readProjects } from './csv.js';
 import { withArchive } from './import/archive.js';
 import type { Logger } from './logger.js';
-import type { ProjectResult } from './types.js';
+import type { LocalProjectResult } from './local-results.js';
 
 async function statIfPresent(file: string) {
   try {
@@ -180,26 +180,47 @@ async function publishExtraction(staging: string, destination: string, logger: L
   if (backupRoot) await cleanTemporary(backupRoot, logger);
 }
 
-export async function unzipProjects(inputFile: string, downloadRoot: string, logger: Logger): Promise<ProjectResult[]> {
+export async function unzipProjects(inputFile: string, downloadRoot: string, logger: Logger): Promise<LocalProjectResult[]> {
   const projects = await readProjects(inputFile);
-  const results: ProjectResult[] = [];
+  const results: LocalProjectResult[] = [];
   for (const project of projects) {
     const startedAt = Date.now();
     const projectDirectory = path.resolve(downloadRoot, project.projectCleanName);
     const zipPath = path.join(projectDirectory, `${project.projectCleanName}.zip`);
     const directory = path.join(projectDirectory, project.projectCleanName);
-    const context = { projectUid: project.projectUid, projectCleanName: project.projectCleanName, zipPath, extractionDirectory: directory };
+    const context = {
+      projectUid: project.projectUid, projectName: project.projectName,
+      projectCleanName: project.projectCleanName, zipPath, extractionDirectory: directory,
+    };
     if (!project.enabled) {
-      logger.info('Skipping disabled project', context);
-      results.push({ project, status: 'SKIPPED', message: 'Project is disabled', durationMs: 0 });
+      logger.info('Skipping disabled project', { ...context, skipReason: 'DISABLED' });
+      results.push({ project, status: 'SKIPPED', skipReason: 'DISABLED', message: 'Project is disabled', durationMs: 0 });
       continue;
     }
     let staging: string | undefined;
     try {
-      if (!(await fs.lstat(projectDirectory)).isDirectory()) {
+      const projectFolder = await statIfPresent(projectDirectory);
+      if (!projectFolder) {
+        const message = 'No downloaded ZIP available; project download folder is missing';
+        logger.warn('[UNZIP_SKIP: MISSING_DOWNLOAD] Project skipped; extraction not attempted', {
+          ...context, skipReason: 'MISSING_DOWNLOAD', reason: message,
+        });
+        results.push({ project, status: 'SKIPPED', skipReason: 'MISSING_DOWNLOAD', message, durationMs: Date.now() - startedAt });
+        continue;
+      }
+      if (!projectFolder.isDirectory()) {
         throw new Error(`Project download folder must be a directory, not a link: ${projectDirectory}`);
       }
-      if (!(await fs.lstat(zipPath)).isFile()) {
+      const zipFile = await statIfPresent(zipPath);
+      if (!zipFile) {
+        const message = 'No downloaded ZIP available; project ZIP is missing';
+        logger.warn('[UNZIP_SKIP: MISSING_DOWNLOAD] Project skipped; extraction not attempted', {
+          ...context, skipReason: 'MISSING_DOWNLOAD', reason: message,
+        });
+        results.push({ project, status: 'SKIPPED', skipReason: 'MISSING_DOWNLOAD', message, durationMs: Date.now() - startedAt });
+        continue;
+      }
+      if (!zipFile.isFile()) {
         throw new Error(`Project ZIP must be a regular file, not a link: ${zipPath}`);
       }
       const existing = await statIfPresent(directory);
@@ -228,8 +249,11 @@ export async function unzipProjects(inputFile: string, downloadRoot: string, log
       results.push({ project, status: 'SUCCESS', downloadDirectory: directory, durationMs: Date.now() - startedAt });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      logger.error('Project ZIP extraction failed', { ...context, error: message });
-      results.push({ project, status: 'FAILED', message, downloadDirectory: directory, durationMs: Date.now() - startedAt });
+      logger.error('[UNZIP_ERROR: EXTRACTION_ERROR] Project ZIP extraction failed', { ...context, error: message });
+      results.push({
+        project, status: 'FAILED', message,
+        downloadDirectory: directory, durationMs: Date.now() - startedAt,
+      });
     } finally {
       if (staging) await cleanTemporary(staging, logger);
     }

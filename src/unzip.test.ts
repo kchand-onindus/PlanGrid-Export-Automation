@@ -4,8 +4,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { test, type TestContext } from 'node:test';
 import { crc32 } from 'node:zlib';
-import type { Logger } from './logger.js';
+import type { Logger, LogContext } from './logger.js';
 import { unzipProjects } from './unzip.js';
+import { summarizeLocalResults } from './local-results.js';
 import { prepareSync } from './sync/prepare.js';
 
 const headers = 'project_uid,project_name,project_clean_name,enabled,start_date,end_date';
@@ -112,10 +113,53 @@ test('skips disabled rows and continues after missing folders, missing ZIPs, and
   await fs.mkdir(path.join(f.downloads, 'Broken'));
   await fs.writeFile(path.join(f.downloads, 'Broken/Broken.zip'), 'not a ZIP');
   await fs.writeFile(f.zipPath, makeZip([{ name: 'ok.txt' }]));
-  const results = await unzipProjects(f.input, f.downloads, quietLogger);
-  assert.deepEqual(results.map((result) => result.status), ['FAILED', 'SKIPPED', 'FAILED', 'FAILED', 'SUCCESS']);
+  const logs: { message: string; context?: LogContext }[] = [];
+  const record = (message: string, context?: LogContext) => logs.push({ message, context });
+  const logger = { ...quietLogger, error: record, warn: record };
+  const results = await unzipProjects(f.input, f.downloads, logger);
+  assert.deepEqual(results.map((result) => result.status), ['SKIPPED', 'SKIPPED', 'SKIPPED', 'FAILED', 'SUCCESS']);
+  assert.deepEqual(results.map((result) => result.skipReason),
+    ['MISSING_DOWNLOAD', 'DISABLED', 'MISSING_DOWNLOAD', undefined, undefined]);
+  assert.deepEqual(summarizeLocalResults(results), {
+    total: 5, success: 1, skipped: 3, failed: 1,
+    skippedByReason: { MISSING_DOWNLOAD: 2, DISABLED: 1 }, failedProjects: ['Broken'],
+  });
+  assert.equal(logs.filter(({ message }) => message.startsWith('[UNZIP_SKIP: MISSING_DOWNLOAD]')
+    && message.includes('extraction not attempted')).length, 2);
+  assert.ok(logs.some(({ message, context }) => message.startsWith('[UNZIP_ERROR: EXTRACTION_ERROR]')
+    && context?.projectCleanName === 'Broken'));
   assert.equal(await fs.readFile(path.join(f.output, 'ok.txt'), 'utf8'), 'drawing contents');
   await assert.rejects(fs.stat(path.join(f.downloads, 'Disabled')), { code: 'ENOENT' });
+  await assert.rejects(fs.stat(path.join(f.downloads, 'Missing')), { code: 'ENOENT' });
+  assert.deepEqual(await fs.readdir(path.join(f.downloads, 'NoZip')), []);
+});
+
+test('missing downloads are reported separately without touching previous extractions or temporary exports', async (t) => {
+  const f = await fixture(t, '1,Missing folder,Missing,true,,\n2,Missing ZIP,Custom_name,true,,');
+  await fs.mkdir(f.output);
+  await fs.writeFile(path.join(f.output, 'keep.txt'), 'previous extraction');
+  const temporaryZip = path.join(f.downloads, '.export-download-in-progress.zip');
+  await fs.writeFile(temporaryZip, 'download still saving');
+  const results = await unzipProjects(f.input, f.downloads, quietLogger);
+  assert.ok(results.every((result) => result.status === 'SKIPPED' && result.skipReason === 'MISSING_DOWNLOAD'));
+  assert.deepEqual(summarizeLocalResults(results), {
+    total: 2, success: 0, skipped: 2, failed: 0,
+    skippedByReason: { MISSING_DOWNLOAD: 2 }, failedProjects: [],
+  });
+  assert.equal(await fs.readFile(path.join(f.output, 'keep.txt'), 'utf8'), 'previous extraction');
+  assert.equal(await fs.readFile(temporaryZip, 'utf8'), 'download still saving');
+  assert.deepEqual(await fs.readdir(f.directory), ['Custom_name']);
+  await assert.rejects(fs.stat(path.join(f.downloads, 'Missing')), { code: 'ENOENT' });
+});
+
+test('an unzip run with no failures reports empty failure lists', async (t) => {
+  const f = await fixture(t, '1,Ready ZIP,Custom_name,true,,\n2,Disabled,Disabled,false,,');
+  await fs.writeFile(f.zipPath, makeZip([{ name: 'ok.txt' }]));
+  const results = await unzipProjects(f.input, f.downloads, quietLogger);
+  assert.deepEqual(summarizeLocalResults(results), {
+    total: 2, success: 1, skipped: 1, failed: 0,
+    skippedByReason: { DISABLED: 1 }, failedProjects: [],
+  });
 });
 
 test('omits a single project wrapper while retaining all contents under the clean-name parent', async (t) => {
@@ -357,13 +401,16 @@ test('copies the previous extraction back if publishing the verified replacement
     if (path.basename(path.dirname(from)).startsWith('.unzip-stage-')) {
       await fs.mkdir(to, { recursive: true });
       await fs.writeFile(path.join(to, 'partial.txt'), 'partial copy');
-      throw new Error('Simulated publish copy failure');
+      throw Object.assign(new Error('Simulated publish copy failure'), { code: 'ENOENT' });
     }
     return copy(from, to, options);
   });
   const [result] = await unzipProjects(f.input, f.downloads, quietLogger);
   assert.equal(result.status, 'FAILED');
   assert.match(result.message!, /Simulated publish copy failure/);
+  assert.equal(result.skipReason, undefined, 'An ENOENT during publication is an extraction failure');
+  assert.equal(summarizeLocalResults([result]).failed, 1);
+  assert.equal(summarizeLocalResults([result]).skipped, 0);
   assert.equal(await fs.readFile(path.join(f.output, 'previous.txt'), 'utf8'), 'old extraction');
   assert.deepEqual(await fs.readdir(f.output), ['previous.txt']);
   assert.deepEqual((await fs.readdir(f.directory)).sort(), ['Custom_name', 'Custom_name.zip']);

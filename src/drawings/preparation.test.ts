@@ -4,8 +4,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { test, type TestContext } from 'node:test';
 import type { Logger } from '../logger.js';
-import { confirmSyncOverwrite } from '../sync/confirmation.js';
 import { prepareDrawings } from '../sync/prepare.js';
+import { summarizeLocalResults } from '../local-results.js';
 
 const quietLogger: Logger = { general() {}, info() {}, debug() {}, success() {}, warn() {}, error() {} };
 
@@ -27,7 +27,7 @@ async function write(file: string, contents: string) {
   await fs.writeFile(file, contents);
 }
 
-test('copies all other project entries, retaining nested names, empty directories, sources and unrelated output', async (t) => {
+test('refreshes the whole project with eligible source contents, preserving sources and other projects', async (t) => {
   const f = await fixture(t);
   await write(path.join(f.extraction, 'Documents/contracts/a.txt'), 'excluded document');
   await write(path.join(f.extraction, 'Photos/site.jpg'), 'excluded photo');
@@ -36,17 +36,26 @@ test('copies all other project entries, retaining nested names, empty directorie
   await fs.mkdir(path.join(f.extraction, 'Drawings/empty'), { recursive: true });
   await fs.mkdir(path.join(f.extraction, 'Other empty'), { recursive: true });
   await write(path.join(f.destination, 'unrelated.txt'), 'keep');
+  await write(path.join(f.destination, 'Documents/old.txt'), 'remove stale excluded content');
+  await write(path.join(f.drawings, 'Other Project/keep.txt'), 'keep other project');
+  await write(path.join(f.drawings, 'root.txt'), 'keep root file');
+  const before = await fs.stat(f.destination);
   const [result] = await prepareDrawings(f.input, f.downloads, f.drawings, quietLogger);
   assert.equal(result.status, 'SUCCESS', result.message);
   assert.equal(result.downloadDirectory, f.destination);
-  assert.deepEqual((await fs.readdir(f.destination)).sort(), ['Drawings', 'Other', 'Other empty', 'export report.txt', 'unrelated.txt']);
+  assert.deepEqual((await fs.readdir(f.destination)).sort(), ['Drawings', 'Other', 'Other empty', 'export report.txt']);
+  assert.equal((await fs.stat(f.destination)).ino, before.ino, 'Keep the project directory itself in place');
   for (const file of files) {
     assert.equal(await fs.readFile(path.join(f.destination, file), 'utf8'), file);
     assert.equal(await fs.readFile(path.join(f.extraction, file), 'utf8'), file);
   }
   assert.deepEqual(await fs.readdir(path.join(f.destination, 'Drawings/empty')), []);
   assert.deepEqual(await fs.readdir(path.join(f.destination, 'Other empty')), []);
-  assert.equal(await fs.readFile(path.join(f.destination, 'unrelated.txt'), 'utf8'), 'keep');
+  await assert.rejects(fs.stat(path.join(f.destination, 'unrelated.txt')), { code: 'ENOENT' });
+  await assert.rejects(fs.stat(path.join(f.destination, 'Documents')), { code: 'ENOENT' });
+  assert.equal(await fs.readFile(path.join(f.drawings, 'Other Project/keep.txt'), 'utf8'), 'keep other project');
+  assert.equal(await fs.readFile(path.join(f.drawings, 'root.txt'), 'utf8'), 'keep root file');
+  assert.deepEqual((await fs.readdir(f.drawings)).sort(), ['Custom_name', 'Other Project', 'root.txt']);
   assert.equal(await fs.readFile(path.join(f.extraction, 'Documents/contracts/a.txt'), 'utf8'), 'excluded document');
 });
 
@@ -97,86 +106,84 @@ test('rejects multiple legacy project wrappers before copying', async (t) => {
   await assert.rejects(fs.stat(f.destination), { code: 'ENOENT' });
 });
 
-test('skips disabled and Documents/Photos-only projects, fails missing roots, and continues', async (t) => {
-  const f = await fixture(t, '1,Disabled,Disabled,false,,\n2,Missing,Missing,true,,\n3,Excluded,Excluded,true,,\n4,Good,Custom_name,true,,');
+test('skips disabled projects, missing extraction roots and Documents/Photos-only projects, and continues', async (t) => {
+  const f = await fixture(t, '1,Disabled,Disabled,false,,\n2,Missing,Missing,true,,\n3,Excluded,Excluded,true,,\n4,Missing inner extraction,NoExtraction,true,,\n5,Good,Custom_name,true,,');
   await write(path.join(f.downloads, 'Excluded/Excluded/Documents/a.txt'), 'excluded');
+  await fs.mkdir(path.join(f.downloads, 'NoExtraction'));
   await write(path.join(f.extraction, 'Drawings/a.pdf'), 'drawing');
   const results = await prepareDrawings(f.input, f.downloads, f.drawings, quietLogger);
-  assert.deepEqual(results.map((result) => result.status), ['SKIPPED', 'FAILED', 'SKIPPED', 'SUCCESS']);
+  assert.deepEqual(results.map((result) => result.status), ['SKIPPED', 'SKIPPED', 'SKIPPED', 'SKIPPED', 'SUCCESS']);
+  assert.deepEqual(summarizeLocalResults(results), {
+    total: 5, success: 1, skipped: 4, failed: 0,
+    skippedByReason: { DISABLED: 1, MISSING_EXTRACTION: 2, NO_MATCHING_CONTENT: 1 }, failedProjects: [],
+  });
   assert.deepEqual(await fs.readdir(f.drawings), ['Custom_name']);
+  await assert.rejects(fs.stat(path.join(f.downloads, 'Missing')), { code: 'ENOENT' });
+  assert.deepEqual(await fs.readdir(path.join(f.downloads, 'NoExtraction')), []);
 });
 
-test('previews conflicts once before copying and preserves unrelated and excluded destination files', async (t) => {
+test('replaces matching files and removes all destination-only content without an overwrite prompt', async (t) => {
   const f = await fixture(t);
   await write(path.join(f.extraction, 'Drawings/existing.pdf'), 'new drawing');
   await write(path.join(f.extraction, 'new.txt'), 'new file');
   await write(path.join(f.extraction, 'report.txt'), 'new report');
   await write(path.join(f.extraction, 'Documents/old.txt'), 'excluded document');
   await write(path.join(f.destination, 'Drawings/existing.pdf'), 'old drawing');
+  await write(path.join(f.destination, 'Drawings/stale.pdf'), 'remove stale nested drawing');
   await write(path.join(f.destination, 'report.txt'), 'old report');
   await write(path.join(f.destination, 'Documents/old.txt'), 'keep document');
   await write(path.join(f.destination, 'unrelated.txt'), 'keep unrelated');
-  let requests = 0;
-  const [result] = await prepareDrawings(f.input, f.downloads, f.drawings, quietLogger, async (request) => {
-    requests++;
-    assert.equal(request.destination, f.destination);
-    assert.equal(request.project.projectCleanName, 'Custom_name');
-    assert.deepEqual(request.files.sort(), [path.join(f.destination, 'Drawings/existing.pdf'), path.join(f.destination, 'report.txt')]);
-    await assert.rejects(fs.stat(path.join(f.destination, 'new.txt')), { code: 'ENOENT' });
-    return true;
-  });
-  assert.equal(requests, 1);
+  const [result] = await prepareDrawings(f.input, f.downloads, f.drawings, quietLogger);
   assert.equal(result.status, 'SUCCESS', result.message);
   assert.equal(await fs.readFile(path.join(f.destination, 'Drawings/existing.pdf'), 'utf8'), 'new drawing');
   assert.equal(await fs.readFile(path.join(f.destination, 'report.txt'), 'utf8'), 'new report');
   assert.equal(await fs.readFile(path.join(f.destination, 'new.txt'), 'utf8'), 'new file');
-  assert.equal(await fs.readFile(path.join(f.destination, 'Documents/old.txt'), 'utf8'), 'keep document');
-  assert.equal(await fs.readFile(path.join(f.destination, 'unrelated.txt'), 'utf8'), 'keep unrelated');
+  assert.deepEqual(await fs.readdir(path.join(f.destination, 'Drawings')), ['existing.pdf']);
+  await assert.rejects(fs.stat(path.join(f.destination, 'Documents')), { code: 'ENOENT' });
+  await assert.rejects(fs.stat(path.join(f.destination, 'unrelated.txt')), { code: 'ENOENT' });
+  assert.deepEqual((await fs.readdir(f.drawings)), ['Custom_name']);
 });
 
-test('declining, missing approval and noninteractive conflicts leave the whole project unchanged', async (t) => {
-  for (const mode of ['declined', 'missing', 'noninteractive']) {
-    const f = await fixture(t);
-    await write(path.join(f.extraction, 'Drawings/existing.pdf'), 'new');
-    await write(path.join(f.extraction, 'new.txt'), 'new file');
-    await write(path.join(f.destination, 'Drawings/existing.pdf'), 'old');
-    const confirm = mode === 'declined' ? async () => false
-      : mode === 'noninteractive' ? (request: Parameters<typeof confirmSyncOverwrite>[0]) =>
-        confirmSyncOverwrite(request, process.stdin, process.stdout, false) : undefined;
-    const [result] = await prepareDrawings(f.input, f.downloads, f.drawings, quietLogger, confirm);
-    assert.equal(result.status, mode === 'declined' ? 'SKIPPED' : 'FAILED');
-    assert.equal(await fs.readFile(path.join(f.destination, 'Drawings/existing.pdf'), 'utf8'), 'old');
-    await assert.rejects(fs.stat(path.join(f.destination, 'new.txt')), { code: 'ENOENT' });
-  }
-});
-
-test('rechecks existing and new destinations after approval before copying', async (t) => {
+test('refuses to clear a destination that changes while the replacement is staged', async (t) => {
   for (const change of ['existing', 'new']) {
     const f = await fixture(t);
     await write(path.join(f.extraction, 'Drawings/existing.pdf'), 'new drawing');
     await write(path.join(f.extraction, 'new.txt'), 'new file');
     await write(path.join(f.destination, 'Drawings/existing.pdf'), 'old');
-    const [result] = await prepareDrawings(f.input, f.downloads, f.drawings, quietLogger, async () => {
+    const copy = fs.copyFile;
+    let changed = false;
+    t.mock.method(fs, 'copyFile', async (from: string, to: string, mode?: number) => {
+      await copy(from, to, mode);
+      if (changed) return;
+      changed = true;
       await write(path.join(f.destination, change === 'existing' ? 'Drawings/existing.pdf' : 'new.txt'), 'external change');
-      return true;
     });
+    const [result] = await prepareDrawings(f.input, f.downloads, f.drawings, quietLogger);
     assert.equal(result.status, 'FAILED');
-    assert.match(result.message!, /changed after the overwrite preview|appeared after the preview/);
+    assert.match(result.message!, /destination changed while preparing/);
     assert.equal(await fs.readFile(path.join(f.destination, 'Drawings/existing.pdf'), 'utf8'), change === 'existing' ? 'external change' : 'old');
   }
 });
 
-test('rejects overlapping roots and destination type conflicts before copying', async (t) => {
-  for (const conflict of ['overlap', 'type']) {
-    const f = await fixture(t);
-    await write(path.join(f.extraction, 'Drawings/a.pdf'), 'drawing');
-    if (conflict === 'type') await write(path.join(f.destination, 'Drawings'), 'file conflicts with directory');
-    const [result] = await prepareDrawings(f.input, f.downloads, conflict === 'overlap' ? f.extraction : f.drawings, quietLogger);
-    assert.equal(result.status, 'FAILED');
-    assert.match(result.message!, /must be separate|incompatible/);
-    if (conflict === 'overlap') assert.deepEqual(await fs.readdir(f.extraction), ['Drawings']);
-    else assert.equal(await fs.readFile(path.join(f.destination, 'Drawings'), 'utf8'), 'file conflicts with directory');
-  }
+test('rejects overlapping roots before copying or clearing anything', async (t) => {
+  const f = await fixture(t);
+  await write(path.join(f.extraction, 'Drawings/a.pdf'), 'drawing');
+  const [result] = await prepareDrawings(f.input, f.downloads, f.extraction, quietLogger);
+  assert.equal(result.status, 'FAILED');
+  assert.match(result.message!, /must be separate/);
+  assert.deepEqual(await fs.readdir(f.extraction), ['Drawings']);
+});
+
+test('refresh replaces old file/directory types with the fresh source layout', async (t) => {
+  const f = await fixture(t);
+  await write(path.join(f.extraction, 'Drawings/a.pdf'), 'new drawing');
+  await write(path.join(f.extraction, 'report.txt'), 'new report');
+  await write(path.join(f.destination, 'Drawings'), 'old file');
+  await write(path.join(f.destination, 'report.txt/old.txt'), 'old directory');
+  const [result] = await prepareDrawings(f.input, f.downloads, f.drawings, quietLogger);
+  assert.equal(result.status, 'SUCCESS', result.message);
+  assert.equal(await fs.readFile(path.join(f.destination, 'Drawings/a.pdf'), 'utf8'), 'new drawing');
+  assert.equal(await fs.readFile(path.join(f.destination, 'report.txt'), 'utf8'), 'new report');
 });
 
 test('rejects source and destination links before copying', async (t) => {
@@ -202,13 +209,141 @@ test('rejects source and destination links before copying', async (t) => {
   }
 });
 
-test('retains approved destination files if staging the incoming replacement fails', async (t) => {
-  const f = await fixture(t);
+test('retains previous output when staging fails, reports failure, and continues to the next project', async (t) => {
+  const f = await fixture(t, '1,First,Custom_name,true,,\n2,Next,Next,true,,');
   await write(path.join(f.extraction, 'Drawings/a.pdf'), 'new');
   await write(path.join(f.destination, 'Drawings/a.pdf'), 'keep');
-  t.mock.method(fs, 'copyFile', async () => { throw new Error('Simulated incoming copy failure'); });
-  const [result] = await prepareDrawings(f.input, f.downloads, f.drawings, quietLogger, async () => true);
+  await write(path.join(f.downloads, 'Next/Next/Drawings/next.pdf'), 'next drawing');
+  const copy = fs.copyFile;
+  t.mock.method(fs, 'copyFile', async (from: string, to: string, mode?: number) => {
+    if (from.startsWith(`${f.extraction}${path.sep}`)) throw new Error('Simulated incoming copy failure');
+    await copy(from, to, mode);
+  });
+  const [result, next] = await prepareDrawings(f.input, f.downloads, f.drawings, quietLogger);
   assert.equal(result.status, 'FAILED');
   assert.equal(await fs.readFile(path.join(f.destination, 'Drawings/a.pdf'), 'utf8'), 'keep');
   assert.deepEqual(await fs.readdir(path.join(f.destination, 'Drawings')), ['a.pdf']);
+  assert.equal(next.status, 'SUCCESS', next.message);
+  assert.deepEqual(summarizeLocalResults([result, next]), {
+    total: 2, success: 1, skipped: 0, failed: 1, skippedByReason: {}, failedProjects: ['Custom_name'],
+  });
+  assert.deepEqual((await fs.readdir(f.drawings)).sort(), ['Custom_name', 'Next']);
+});
+
+test('creates missing output and refreshes existing output without directory renames', async (t) => {
+  const f = await fixture(t);
+  await write(path.join(f.extraction, 'Drawings/a.pdf'), 'first drawing');
+  t.mock.method(fs, 'rename', async () => { throw new Error('Windows directory rename blocked'); });
+  const [first] = await prepareDrawings(f.input, f.downloads, f.drawings, quietLogger);
+  assert.equal(first.status, 'SUCCESS', first.message);
+  await write(path.join(f.destination, 'stale.txt'), 'remove');
+  await fs.writeFile(path.join(f.extraction, 'Drawings/a.pdf'), 'fresh drawing');
+  const [second] = await prepareDrawings(f.input, f.downloads, f.drawings, quietLogger);
+  assert.equal(second.status, 'SUCCESS', second.message);
+  assert.deepEqual(await fs.readdir(f.destination), ['Drawings']);
+  assert.equal(await fs.readFile(path.join(f.destination, 'Drawings/a.pdf'), 'utf8'), 'fresh drawing');
+});
+
+test('a failed backup leaves the previous project contents untouched', async (t) => {
+  const f = await fixture(t);
+  await write(path.join(f.extraction, 'new.txt'), 'new contents');
+  await write(path.join(f.destination, 'previous.txt'), 'old contents');
+  t.mock.method(fs, 'cp', async () => { throw new Error('Backup copy failed'); });
+  const [result] = await prepareDrawings(f.input, f.downloads, f.drawings, quietLogger);
+  assert.equal(result.status, 'FAILED');
+  assert.match(result.message!, /Backup copy failed/);
+  assert.deepEqual(await fs.readdir(f.destination), ['previous.txt']);
+  assert.equal(await fs.readFile(path.join(f.destination, 'previous.txt'), 'utf8'), 'old contents');
+  assert.deepEqual(await fs.readdir(f.drawings), ['Custom_name']);
+});
+
+test('restores all previous contents after partial publication fails', async (t) => {
+  const f = await fixture(t);
+  await write(path.join(f.extraction, 'Drawings/new.pdf'), 'new drawing');
+  await write(path.join(f.destination, 'previous.txt'), 'old contents');
+  const copy = fs.cp;
+  t.mock.method(fs, 'cp', async (from: string, to: string, options: Parameters<typeof fs.cp>[2]) => {
+    if (path.basename(path.dirname(from)).startsWith('.drawings-stage-')) {
+      await write(path.join(f.destination, 'partial.txt'), 'partial copy');
+      throw new Error('Publication copy failed');
+    }
+    await copy(from, to, options);
+  });
+  const [result] = await prepareDrawings(f.input, f.downloads, f.drawings, quietLogger);
+  assert.equal(result.status, 'FAILED');
+  assert.match(result.message!, /Publication copy failed/);
+  assert.deepEqual(await fs.readdir(f.destination), ['previous.txt']);
+  assert.equal(await fs.readFile(path.join(f.destination, 'previous.txt'), 'utf8'), 'old contents');
+  assert.deepEqual(await fs.readdir(f.drawings), ['Custom_name']);
+});
+
+test('restores all previous contents if clearing old files fails partway through', async (t) => {
+  const f = await fixture(t);
+  await write(path.join(f.extraction, 'new.txt'), 'new contents');
+  await write(path.join(f.destination, 'first.txt'), 'old first');
+  await write(path.join(f.destination, 'second.txt'), 'old second');
+  const remove = fs.rm;
+  let cleared = 0;
+  let blocked = false;
+  t.mock.method(fs, 'rm', async (target: string, options: Parameters<typeof fs.rm>[1]) => {
+    if (path.dirname(target) === f.destination && !blocked && ++cleared === 2) {
+      blocked = true;
+      throw new Error('Old file is locked');
+    }
+    return remove(target, options);
+  });
+  const [result] = await prepareDrawings(f.input, f.downloads, f.drawings, quietLogger);
+  assert.equal(result.status, 'FAILED');
+  assert.match(result.message!, /Old file is locked/);
+  assert.deepEqual((await fs.readdir(f.destination)).sort(), ['first.txt', 'second.txt']);
+  assert.equal(await fs.readFile(path.join(f.destination, 'first.txt'), 'utf8'), 'old first');
+  assert.equal(await fs.readFile(path.join(f.destination, 'second.txt'), 'utf8'), 'old second');
+  assert.deepEqual(await fs.readdir(f.drawings), ['Custom_name']);
+});
+
+test('removes a newly created project folder after a failed first publication', async (t) => {
+  const f = await fixture(t);
+  await write(path.join(f.extraction, 'new.txt'), 'new contents');
+  t.mock.method(fs, 'cp', async () => { throw new Error('Publication failed'); });
+  const [result] = await prepareDrawings(f.input, f.downloads, f.drawings, quietLogger);
+  assert.equal(result.status, 'FAILED');
+  await assert.rejects(fs.stat(f.destination), { code: 'ENOENT' });
+  assert.deepEqual(await fs.readdir(f.drawings), []);
+});
+
+test('retains and reports the backup when both publication and restoration fail', async (t) => {
+  const f = await fixture(t);
+  await write(path.join(f.extraction, 'new.txt'), 'new contents');
+  await write(path.join(f.destination, 'previous.txt'), 'old contents');
+  const copy = fs.cp;
+  t.mock.method(fs, 'cp', async (from: string, to: string, options: Parameters<typeof fs.cp>[2]) => {
+    const parent = path.basename(path.dirname(from));
+    if (parent.startsWith('.drawings-stage-') || parent.startsWith('.drawings-backup-')) {
+      throw new Error('Persistent copy lock');
+    }
+    await copy(from, to, options);
+  });
+  const [result] = await prepareDrawings(f.input, f.downloads, f.drawings, quietLogger);
+  assert.equal(result.status, 'FAILED');
+  const backups = (await fs.readdir(f.drawings)).filter((name) => name.startsWith('.drawings-backup-'));
+  assert.equal(backups.length, 1);
+  assert.match(result.message!, /recovery backup retained at/);
+  assert.ok(result.message!.includes(path.join(f.drawings, backups[0])));
+  assert.equal(await fs.readFile(path.join(f.drawings, backups[0], 'previous.txt'), 'utf8'), 'old contents');
+  assert.equal((await fs.readdir(f.drawings)).some((name) => name.startsWith('.drawings-stage-')), false);
+});
+
+test('temporary cleanup failures count as failures with the retained paths reported', async (t) => {
+  const f = await fixture(t);
+  await write(path.join(f.extraction, 'new.txt'), 'new contents');
+  const remove = fs.rm;
+  const mockedRemove = t.mock.method(fs, 'rm', async (target: string, options: Parameters<typeof fs.rm>[1]) => {
+    if (path.basename(target).startsWith('.drawings-stage-')) throw new Error('Cleanup permission denied');
+    return remove(target, options);
+  });
+  const [result] = await prepareDrawings(f.input, f.downloads, f.drawings, quietLogger);
+  mockedRemove.mock.restore();
+  assert.equal(result.status, 'FAILED');
+  assert.match(result.message!, /contents refreshed, but temporary cleanup failed.*\.drawings-stage-/);
+  assert.equal(await fs.readFile(path.join(f.destination, 'new.txt'), 'utf8'), 'new contents');
 });

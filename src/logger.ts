@@ -97,7 +97,8 @@ export function logError(message: string, error?: unknown, context?: LogContext)
         ? undefined
         : { error: String(error) };
 
-  logger.error(message, { ...context, ...errorDetails });
+  const label = context?.errorType ? `[ERROR_TYPE: ${context.errorType}] ` : '';
+  logger.error(`${label}${message}`, { ...context, ...errorDetails });
 
   if (error && (typeof error === 'object' || typeof error === 'function')) {
     loggedErrors.add(error);

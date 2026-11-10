@@ -6,9 +6,10 @@ import { test, type TestContext } from 'node:test';
 import type { Page } from 'playwright';
 import { exportProject } from './project-exporter.js';
 import { readProjects } from './csv.js';
+import { summarizeExports, logExportSummary } from './export-summary.js';
 import { logger, type LogContext } from './logger.js';
 import { PROJECT_SELECTORS, TIMEOUTS, URLS } from '../utils/constants.js';
-import type { Project } from './types.js';
+import type { ExportErrorType, Project, ProjectResult } from './types.js';
 
 const includeNames = [
   'inc_sheets', 'inc_conformed', 'inc_master', 'inc_user_annotations', 'inc_photos',
@@ -42,7 +43,7 @@ async function createFixture(t: TestContext, options: {
   projectName?: string;
   projectRows?: FixtureProjectRow[];
   failDownloadClick?: boolean;
-  beforeSave?: () => Promise<void>;
+  beforeSave?: (destination: string) => Promise<void>;
   onPoll?: () => void;
   previousBuilds?: FixtureBuild[];
   newBuilds?: FixtureBuild[];
@@ -56,7 +57,7 @@ async function createFixture(t: TestContext, options: {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'project-export-test-'));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const logs: { message: string; context?: LogContext }[] = [];
-  for (const level of ['info', 'debug', 'success', 'warn', 'error'] as const) {
+  for (const level of ['general', 'info', 'debug', 'success', 'warn', 'error'] as const) {
     t.mock.method(logger, level, (message: string, context?: LogContext) => logs.push({ message, context }));
   }
   const project: Project = {
@@ -253,7 +254,7 @@ async function createFixture(t: TestContext, options: {
         suggestedFilename: () => { throw new Error('Platform filename must not be used'); },
         saveAs: async (destination: string) => {
           state.saved = destination;
-          await options.beforeSave?.();
+          await options.beforeSave?.(destination);
           await fs.writeFile(destination, 'test ZIP contents');
         },
       };
@@ -269,8 +270,11 @@ test('first-time export fills dates, checks all options, polls, and saves using 
   assert.equal(result.status, 'SUCCESS');
   assert.equal(result.downloadDirectory, directory);
   assert.equal(state.searched, project.projectName);
-  assert.equal(state.saved, path.join(directory, `${project.projectCleanName}.zip`));
-  assert.equal(await fs.readFile(state.saved, 'utf8'), 'test ZIP contents');
+  const destination = path.join(directory, `${project.projectCleanName}.zip`);
+  assert.equal(path.dirname(state.saved), root);
+  assert.match(path.basename(state.saved), /^\.export-download-.*\.zip$/);
+  assert.equal(await fs.readFile(destination, 'utf8'), 'test ZIP contents');
+  await assert.rejects(fs.stat(state.saved), { code: 'ENOENT' });
   assert.equal(state.startDate, project.startDate);
   assert.equal(state.endDate, project.endDate);
   assert.equal(state.generateClicks, 0);
@@ -285,7 +289,7 @@ test('first-time export fills dates, checks all options, polls, and saves using 
   const saveStartedLog = logs.findIndex(({ message }) => message.startsWith('ZIP download started'));
   const savedLog = logs.findIndex(({ message }) => message === 'As-built ZIP saved');
   assert.ok(clickLog >= 0 && saveStartedLog > clickLog && savedLog > saveStartedLog);
-  assert.equal(logs[saveStartedLog].context?.destination, state.saved);
+  assert.equal(logs[saveStartedLog].context?.destination, destination);
 
   state.searched = '';
   state.saved = '';
@@ -687,10 +691,149 @@ test('download status timers stop on click and save failures without logging ZIP
         failDownloadClick: failure === 'click',
         beforeSave: async () => { if (failure === 'save') throw new Error('ZIP save failed'); },
       });
-      assert.equal((await exportProject(page, project, root)).status, 'FAILED');
+      const result = await exportProject(page, project, root);
+      assert.equal(result.status, 'FAILED');
+      assert.equal(result.errorType, 'DOWNLOAD_ERROR');
+      assert.deepEqual(await fs.readdir(root), [], 'Failed transfers must not leave project or staging folders');
       subtest.mock.timers.tick(80 * 60_000);
       assert.equal(logs.some(({ message }) => message.startsWith('ZIP transfer or saving still in progress')), false);
       assert.equal(logs.some(({ message }) => message === 'As-built ZIP saved'), false);
     });
   }
+});
+
+test('reports searchable error types and counts each failed project once in the summary', async (t) => {
+  const cases: { options: Parameters<typeof createFixture>[1]; errorType: ExportErrorType }[] = [
+    { options: { navigationFailures: 1 }, errorType: 'PROJECTS_PAGE_ERROR' },
+    { options: { projectRows: [] }, errorType: 'PROJECT_NOT_FOUND' },
+    { options: { projectRows: [], projectName: 'Another missing project' }, errorType: 'PROJECT_NOT_FOUND' },
+    { options: { checkboxNames: [] }, errorType: 'EXPORT_FORM_ERROR' },
+    { options: { newHref: null }, errorType: 'BUILD_IDENTITY_ERROR' },
+    { options: { newStatus: () => 'fAiLeD!' }, errorType: 'BUILD_FAILED' },
+    { options: { newStatus: () => 'ERROR.' }, errorType: 'BUILD_ERROR' },
+    { options: { newStatus: () => 'Canceled' }, errorType: 'BUILD_CANCELLED' },
+    { options: { failDownloadClick: true }, errorType: 'DOWNLOAD_ERROR' },
+  ];
+  const results: ProjectResult[] = [];
+  for (const { options, errorType } of cases) {
+    const { root, page, project, logs } = await createFixture(t, options);
+    const result = await exportProject(page, project, root);
+    results.push(result);
+    assert.equal(result.status, 'FAILED');
+    assert.equal(result.errorType, errorType);
+    assert.ok(logs.some(({ message, context }) => message.startsWith(`[ERROR_TYPE: ${errorType}]`)
+      && context?.errorType === errorType && context.projectName === project.projectName));
+    assert.deepEqual(await fs.readdir(root), []);
+  }
+
+  const { root, page, project, logs } = await createFixture(t);
+  results.push(await exportProject(page, project, root));
+  results.push(await exportProject(page, { ...project, enabled: false }, root));
+  const errorsByType = {
+    PROJECTS_PAGE_ERROR: 1, PROJECT_NOT_FOUND: 2, EXPORT_FORM_ERROR: 1, BUILD_IDENTITY_ERROR: 1,
+    BUILD_FAILED: 1, BUILD_ERROR: 1, BUILD_CANCELLED: 1, DOWNLOAD_ERROR: 1,
+  };
+  assert.deepEqual(summarizeExports(results), { total: 11, success: 1, skipped: 1, failed: 9, errorsByType });
+  logExportSummary(results);
+  assert.deepEqual(logs.find(({ message }) => message.includes('EXPORT ERROR SUMMARY BY TYPE'))?.context?.errorsByType,
+    errorsByType);
+  assert.deepEqual(logs.find(({ message }) => message === 'Export run completed')?.context,
+    summarizeExports(results));
+  assert.deepEqual(summarizeExports(results.slice(-2)).errorsByType, {});
+});
+
+test('partial saves are cleaned up before a project folder is created', async (t) => {
+  const { root, page, project, state } = await createFixture(t, {
+    beforeSave: async (destination) => {
+      assert.deepEqual(await fs.readdir(root), [path.basename(destination)]);
+      await fs.writeFile(destination, 'partial ZIP');
+      throw new Error('Connection lost during saving');
+    },
+  });
+  const result = await exportProject(page, project, root);
+  assert.equal(result.errorType, 'DOWNLOAD_ERROR');
+  assert.match(result.message ?? '', /Connection lost/);
+  assert.notEqual(state.saved, '');
+  assert.deepEqual(await fs.readdir(root), []);
+});
+
+test('failed ZIP publication removes the newly created empty project folder and staging', async (t) => {
+  const { root, page, project } = await createFixture(t);
+  t.mock.method(fs, 'rename', async () => { throw new Error('Destination is locked'); });
+  const result = await exportProject(page, project, root);
+  assert.equal(result.errorType, 'DOWNLOAD_ERROR');
+  assert.match(result.message ?? '', /Destination is locked/);
+  assert.deepEqual(await fs.readdir(root), []);
+});
+
+test('failed exports preserve existing ZIPs, extracted files, empty project folders, and other projects', async (t) => {
+  for (const failure of ['lookup', 'build', 'save', 'publish']) {
+    await t.test(failure, async (subtest) => {
+      const { root, page, project } = await createFixture(subtest, {
+        projectRows: failure === 'lookup' ? [] : undefined,
+        newStatus: failure === 'build' ? () => 'Failed' : undefined,
+        beforeSave: failure === 'save' ? async (destination) => {
+          await fs.writeFile(destination, 'partial ZIP');
+          throw new Error('Saving failed');
+        } : undefined,
+      });
+      const directory = path.join(root, project.projectCleanName);
+      const extracted = path.join(directory, project.projectCleanName);
+      const previousZip = path.join(directory, `${project.projectCleanName}.zip`);
+      await fs.mkdir(extracted, { recursive: true });
+      await fs.mkdir(path.join(root, 'Other project'));
+      await fs.writeFile(previousZip, 'previous complete ZIP');
+      await fs.writeFile(path.join(extracted, 'keep.txt'), 'previous extraction');
+      if (failure === 'publish') {
+        subtest.mock.method(fs, 'rename', async () => { throw new Error('Destination is locked'); });
+      }
+      assert.equal((await exportProject(page, project, root)).status, 'FAILED');
+      assert.equal(await fs.readFile(previousZip, 'utf8'), 'previous complete ZIP');
+      assert.equal(await fs.readFile(path.join(extracted, 'keep.txt'), 'utf8'), 'previous extraction');
+      assert.deepEqual((await fs.readdir(root)).sort(), [project.projectCleanName, 'Other project'].sort());
+
+      await fs.rm(directory, { recursive: true });
+      await fs.mkdir(directory);
+      assert.equal((await exportProject(page, project, root)).status, 'FAILED');
+      assert.deepEqual(await fs.readdir(directory), [], 'A pre-existing empty project folder must be retained');
+    });
+  }
+});
+
+test('a successful download replaces only the ZIP and keeps existing project contents', async (t) => {
+  const { root, page, project } = await createFixture(t);
+  const directory = path.join(root, project.projectCleanName);
+  const destination = path.join(directory, `${project.projectCleanName}.zip`);
+  await fs.mkdir(directory);
+  await fs.writeFile(destination, 'previous ZIP');
+  await fs.writeFile(path.join(directory, 'keep.txt'), 'unrelated file');
+  assert.equal((await exportProject(page, project, root)).status, 'SUCCESS');
+  assert.equal(await fs.readFile(destination, 'utf8'), 'test ZIP contents');
+  assert.equal(await fs.readFile(path.join(directory, 'keep.txt'), 'utf8'), 'unrelated file');
+  assert.deepEqual(await fs.readdir(root), [project.projectCleanName]);
+});
+
+test('cleanup permission errors are reported with paths without stopping the next project', async (t) => {
+  let failSaving = true;
+  const { root, page, project, logs } = await createFixture(t, {
+    beforeSave: async (destination) => {
+      if (!failSaving) return;
+      failSaving = false;
+      await fs.writeFile(destination, 'partial ZIP');
+      throw new Error('ZIP saving failed');
+    },
+  });
+  const remove = fs.rm;
+  const mockedRemove = t.mock.method(fs, 'rm', async (target: string, options: Parameters<typeof fs.rm>[1]) => {
+    if (path.basename(target).startsWith('.export-download-')) throw new Error('Cleanup permission denied');
+    return remove(target, options);
+  });
+  const result = await exportProject(page, project, root);
+  assert.equal(result.status, 'FAILED');
+  assert.equal(result.errorType, 'DOWNLOAD_ERROR');
+  assert.ok(logs.some(({ message, context }) => message.startsWith('[ERROR_TYPE: DOWNLOAD_CLEANUP_ERROR]')
+    && typeof context?.stagedFile === 'string'));
+  assert.deepEqual(summarizeExports([result]).errorsByType, { DOWNLOAD_ERROR: 1 });
+  mockedRemove.mock.restore();
+  assert.equal((await exportProject(page, { ...project, projectCleanName: 'Next project' }, root)).status, 'SUCCESS');
 });

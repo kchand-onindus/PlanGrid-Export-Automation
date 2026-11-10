@@ -2,7 +2,9 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { readProjects } from '../csv.js';
 import type { Logger } from '../logger.js';
-import type { Project, ProjectResult } from '../types.js';
+import type { Project } from '../types.js';
+import type { LocalProjectResult } from '../local-results.js';
+import { refreshDrawingDestination } from '../drawings/refresh.js';
 
 const folderNames = ['Documents', 'Photos'] as const;
 interface SourceEntry { name: string; source: string }
@@ -152,7 +154,7 @@ export async function prepareSync(
   syncUpRoot: string,
   logger: Logger,
   confirmOverwrite?: ConfirmOverwrite,
-): Promise<ProjectResult[]> {
+): Promise<LocalProjectResult[]> {
   return prepareLocalCopies(inputFile, downloadRoot, syncUpRoot, logger, 'sync', confirmOverwrite);
 }
 
@@ -161,9 +163,8 @@ export async function prepareDrawings(
   downloadRoot: string,
   drawingsRoot: string,
   logger: Logger,
-  confirmOverwrite?: ConfirmOverwrite,
-): Promise<ProjectResult[]> {
-  return prepareLocalCopies(inputFile, downloadRoot, drawingsRoot, logger, 'drawings', confirmOverwrite);
+): Promise<LocalProjectResult[]> {
+  return prepareLocalCopies(inputFile, downloadRoot, drawingsRoot, logger, 'drawings');
 }
 
 async function prepareLocalCopies(
@@ -173,29 +174,45 @@ async function prepareLocalCopies(
   logger: Logger,
   mode: CopyMode,
   confirmOverwrite?: ConfirmOverwrite,
-): Promise<ProjectResult[]> {
+): Promise<LocalProjectResult[]> {
   const description = mode === 'sync' ? 'Documents/Photos' : 'contents except Documents/Photos';
   const noSources = mode === 'sync' ? 'No Documents or Photos folders found' : 'No contents other than Documents or Photos found';
   const projects = await readProjects(inputFile);
-  const results: ProjectResult[] = [];
+  const results: LocalProjectResult[] = [];
   for (const project of projects) {
     const startedAt = Date.now();
     const projectDirectory = path.resolve(downloadRoot, project.projectCleanName);
     const extractionRoot = path.join(projectDirectory, project.projectCleanName);
     const destination = path.resolve(destinationRoot, project.projectCleanName);
-    const context = { projectUid: project.projectUid, projectCleanName: project.projectCleanName, extractionRoot, destination };
+    const context = {
+      projectUid: project.projectUid, projectName: project.projectName,
+      projectCleanName: project.projectCleanName, extractionRoot, destination,
+    };
     if (!project.enabled) {
-      logger.info('Skipping disabled project', context);
-      results.push({ project, status: 'SKIPPED', message: 'Project is disabled', durationMs: 0 });
+      logger.info('Skipping disabled project', { ...context, skipReason: 'DISABLED' });
+      results.push({ project, status: 'SKIPPED', skipReason: 'DISABLED', message: 'Project is disabled', durationMs: 0 });
       continue;
     }
     try {
-      await requireDirectory(projectDirectory);
-      await requireDirectory(extractionRoot);
+      let missingSource: string | undefined;
+      for (const source of [projectDirectory, extractionRoot]) {
+        const entry = await statIfPresent(source);
+        if (!entry) { missingSource = source; break; }
+        if (!entry.isDirectory()) throw new Error(`Expected a directory, not a file or link: ${source}`);
+      }
+      if (missingSource) {
+        const message = 'Extracted project source is missing; no copying attempted';
+        logger.warn('Project skipped; extracted source is missing', {
+          ...context, skipReason: 'MISSING_EXTRACTION', missingSource,
+        });
+        results.push({ project, status: 'SKIPPED', skipReason: 'MISSING_EXTRACTION', message, durationMs: Date.now() - startedAt });
+        continue;
+      }
       const sources = await (mode === 'sync' ? findSourceFolders(extractionRoot) : findDrawingSources(extractionRoot));
       if (!sources.length) {
-        logger.info(`${noSources}; skipping project`, context);
-        results.push({ project, status: 'SKIPPED', message: noSources, durationMs: Date.now() - startedAt });
+        const skipReason = mode === 'sync' ? 'NO_MATCHING_FOLDER' : 'NO_MATCHING_CONTENT';
+        logger.info(`${noSources}; skipping project`, { ...context, skipReason });
+        results.push({ project, status: 'SKIPPED', skipReason, message: noSources, durationMs: Date.now() - startedAt });
         continue;
       }
       // Resolve existing ancestors to catch aliases without creating output.
@@ -209,10 +226,26 @@ async function prepareLocalCopies(
       if (mode === 'sync' && !existing) {
         throw new Error(`Destination project folder must already exist; no folders or files were created: ${destination}`);
       }
+      if (mode === 'drawings') {
+        const fileCount = await refreshDrawingDestination(destination, logger, context, async (staging) => {
+          const stagedItems: CopyItem[] = [];
+          for (const entry of sources) await planCopy(entry.source, path.join(staging, entry.name), stagedItems);
+          for (const item of stagedItems) {
+            if (item.directory) await fs.mkdir(item.destination, { recursive: true });
+            else await copyItem(item);
+          }
+          return stagedItems.filter((item) => !item.directory).length;
+        });
+        logger.success('Project drawings staging refreshed completely; source contents retained', {
+          ...context, entries: sources.map((entry) => entry.name), fileCount,
+        });
+        results.push({ project, status: 'SUCCESS', downloadDirectory: destination, durationMs: Date.now() - startedAt });
+        continue;
+      }
       const items: CopyItem[] = [];
       for (const entry of sources) await planCopy(entry.source, path.join(destination, entry.name), items);
       const overwritten = items.filter((item) => item.previous);
-      if (mode === 'sync') {
+      {
         const existingFolders = [];
         for (const entry of sources) {
           if (await statIfPresent(path.join(destination, entry.name))) existingFolders.push(entry.name);
@@ -225,21 +258,20 @@ async function prepareLocalCopies(
       }
       if (overwritten.length) {
         logger.warn('Existing destination files require overwrite confirmation', { ...context, existingFileCount: overwritten.length });
-        if (!confirmOverwrite) throw new Error(`Existing destination files require overwrite approval; run npm run ${mode}:prepare in an interactive terminal`);
+        if (!confirmOverwrite) throw new Error('Existing destination files require overwrite approval; run npm run sync:prepare in an interactive terminal');
         const approved = await confirmOverwrite({ project, destination, files: overwritten.map((item) => item.destination) });
         if (!approved) {
-          logger.info('Overwrite declined; project skipped without changes', context);
-          results.push({ project, status: 'SKIPPED', message: 'Overwrite declined; destination unchanged', durationMs: Date.now() - startedAt });
+          logger.info('Overwrite declined; project skipped without changes', { ...context, skipReason: 'OVERWRITE_DECLINED' });
+          results.push({ project, status: 'SKIPPED', skipReason: 'OVERWRITE_DECLINED', message: 'Overwrite declined; destination unchanged', durationMs: Date.now() - startedAt });
           continue;
         }
         logger.info('Overwrite approved for existing destination files', { ...context, existingFileCount: overwritten.length });
       }
       // Recheck the preview before making changes, especially after waiting for input.
-      if (mode === 'sync') await requireDirectory(destination);
+      await requireDirectory(destination);
       for (const item of items) await checkDestination(item);
 
       logger.info(`Copying project ${description} to local staging`, { ...context, entries: sources.map((entry) => entry.name) });
-      if (mode === 'drawings') await fs.mkdir(destination, { recursive: true });
       for (const item of items) {
         if (item.directory) await fs.mkdir(item.destination, { recursive: true });
         else await copyItem(item);

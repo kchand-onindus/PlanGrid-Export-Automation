@@ -10,7 +10,7 @@
     "export:chrome": "tsx src/run-export.ts --connect-chrome",
     "unzip": "tsx src/unzip-main.ts",
     "sync:prepare": "tsx src/sync/main.ts",
-    "drawings:prepare": "tsx src/drawings/main.ts",
+    "drawing:prepare": "tsx src/drawings/main.ts",
     "export": "tsx src/run-export.ts",
     "headless": "tsx src/run-export.ts --headless",
     "import:prepare": "tsx src/import/main.ts",

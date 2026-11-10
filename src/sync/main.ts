@@ -2,6 +2,7 @@ import { paths } from '../config.js';
 import { createLogger } from '../logger.js';
 import { prepareSync } from './prepare.js';
 import { confirmSyncOverwrite } from './confirmation.js';
+import { summarizeLocalResults } from '../local-results.js';
 
 async function main(): Promise<void> {
   const { logger, logFilePath } = createLogger('sync-preparation');
@@ -10,14 +11,9 @@ async function main(): Promise<void> {
   });
   try {
     const results = await prepareSync(paths.inputFile, paths.downloadRoot, paths.syncUpRoot, logger, confirmSyncOverwrite);
-    const failed = results.filter((result) => result.status === 'FAILED').length;
-    logger.general('Local sync preparation completed', {
-      total: results.length,
-      success: results.filter((result) => result.status === 'SUCCESS').length,
-      skipped: results.filter((result) => result.status === 'SKIPPED').length,
-      failed,
-    });
-    if (failed) process.exitCode = 1;
+    const summary = summarizeLocalResults(results);
+    logger.general('Local sync preparation completed — SYNC PREPARATION SUMMARY', summary);
+    if (summary.failed > 0) process.exitCode = 1;
   } catch (error) {
     logger.error('Local sync preparation stopped', { error: error instanceof Error ? error.message : String(error) });
     process.exitCode = 1;

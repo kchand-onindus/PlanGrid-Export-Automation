@@ -1,10 +1,11 @@
-import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { Page } from 'playwright';
 import { timeouts } from './config.js';
 import { logError, logger, type LogContext } from './logger.js';
+import { ExportError } from './export-errors.js';
+import { saveExportDownload } from './export-download.js';
 import { PROJECT_SELECTORS, URLS } from '../utils/constants.js';
-import type { Project, ProjectResult } from './types.js';
+import type { ExportErrorType, Project, ProjectResult } from './types.js';
 
 async function selectProject(page: Page, project: Project): Promise<void> {
   const searchTerm = project.projectName;
@@ -19,7 +20,7 @@ async function selectProject(page: Page, project: Project): Promise<void> {
   try {
     await matchingRows.first().waitFor({ state: 'visible', timeout: timeouts.projectsReadyMs });
   } catch (error) {
-    throw new Error(
+    throw new ExportError('PROJECT_NOT_FOUND',
       `No project row with exact name "${searchTerm}" became visible within ${timeouts.projectsReadyMs / 1000} seconds`,
       { cause: error },
     );
@@ -27,10 +28,10 @@ async function selectProject(page: Page, project: Project): Promise<void> {
 
   const matchingCount = await matchingRows.count();
   if (matchingCount === 0) {
-    throw new Error(`No project row with exact name "${searchTerm}" was found after searching`);
+    throw new ExportError('PROJECT_NOT_FOUND', `No project row with exact name "${searchTerm}" was found after searching`);
   }
   if (matchingCount > 1) {
-    throw new Error(
+    throw new ExportError('PROJECT_AMBIGUOUS',
       `Multiple project rows have the exact name "${searchTerm}"; refusing to select an ambiguous result `
         + `(matchingCount: ${matchingCount})`,
     );
@@ -72,19 +73,19 @@ function startDownloadStatusUpdates(context: LogContext): () => void {
 }
 
 function readBuildId(href: string | null, projectUrl: string): string {
-  if (!href) throw new Error('An As-built row has no build identifier; refusing to use an uncertain build');
+  if (!href) throw new ExportError('BUILD_IDENTITY_ERROR', 'An As-built row has no build identifier; refusing to use an uncertain build');
   const scope = new URL(projectUrl);
   let downloadUrl: URL;
   try {
     downloadUrl = new URL(href, scope);
   } catch {
-    throw new Error('An As-built row has an unreadable build identifier');
+    throw new ExportError('BUILD_IDENTITY_ERROR', 'An As-built row has an unreadable build identifier');
   }
   const projectPath = /^\/projects\/([^/]+)(?:\/|$)/.exec(scope.pathname);
   const buildPath = /^\/projects\/([^/]+)\/asbuilts\/([a-zA-Z0-9-]+)\/direct\/?$/.exec(downloadUrl.pathname);
   if (scope.origin !== new URL(URLS.projects).origin || downloadUrl.origin !== scope.origin
       || !projectPath || !buildPath || buildPath[1] !== projectPath[1]) {
-    throw new Error('An As-built row has an invalid or mismatched build identifier');
+    throw new ExportError('BUILD_IDENTITY_ERROR', 'An As-built row has an invalid or mismatched build identifier');
   }
   return buildPath[2];
 }
@@ -99,9 +100,9 @@ async function readBuildIds(page: Page, projectUrl: string): Promise<Set<string>
   );
   const ids = new Set<string>();
   for (const paths of pathsByRow) {
-    if (paths.length !== 1) throw new Error('Cannot reliably identify every As-built row; expected one build link per row');
+    if (paths.length !== 1) throw new ExportError('BUILD_IDENTITY_ERROR', 'Cannot reliably identify every As-built row; expected one build link per row');
     const id = readBuildId(paths[0], projectUrl);
-    if (ids.has(id)) throw new Error(`Duplicate As-built ID ${id}; refusing an ambiguous table`);
+    if (ids.has(id)) throw new ExportError('BUILD_IDENTITY_ERROR', `Duplicate As-built ID ${id}; refusing an ambiguous table`);
     ids.add(id);
   }
   return ids;
@@ -116,7 +117,7 @@ async function identifyNewBuild(
     const currentIds = await readBuildIds(page, projectUrl);
     const newIds = [...currentIds].filter((id) => !previousBuildIds.has(id));
     if (newIds.length > 1) {
-      throw new Error(`Ambiguous As-built request: ${newIds.length} new build IDs appeared (${newIds.join(', ')}); no download attempted`);
+      throw new ExportError('BUILD_IDENTITY_ERROR', `Ambiguous As-built request: ${newIds.length} new build IDs appeared (${newIds.join(', ')}); no download attempted`);
     }
     if (newIds.length === 1) {
       logger.info('New As-built identified; tracking its build ID', {
@@ -155,17 +156,20 @@ async function waitForAsBuiltDownload(
 
   while (!page.isClosed()) {
     await row.waitFor({ state: 'visible', timeout: timeouts.actionMs });
-    if (await row.count() !== 1) throw new Error(`Cannot uniquely locate tracked As-built ${buildId}`);
+    if (await row.count() !== 1) throw new ExportError('BUILD_IDENTITY_ERROR', `Cannot uniquely locate tracked As-built ${buildId}`);
     // innerText excludes the hidden Processing span retained in completed rows.
     const status = (await row.locator(PROJECT_SELECTORS.status).innerText()).trim();
-    if (/^(failed|error|cancelled|canceled)[.!]?$/i.test(status)) {
-      throw new Error(`Tracked As-built ${buildId} reported terminal status "${status}"`);
+    const terminalStatus = /^(failed|error|cancelled|canceled)[.!]?$/i.exec(status)?.[1].toLowerCase();
+    if (terminalStatus) {
+      const errorType = terminalStatus === 'failed' ? 'BUILD_FAILED'
+        : terminalStatus === 'error' ? 'BUILD_ERROR' : 'BUILD_CANCELLED';
+      throw new ExportError(errorType, `Tracked As-built ${buildId} reported terminal status "${status}"`);
     }
     const progress = (await row.locator(PROJECT_SELECTORS.progress).innerText()).trim();
     const downloadLink = row.locator(PROJECT_SELECTORS.downloadLink);
     if (await downloadLink.count() !== 1
         || readBuildId(await downloadLink.getAttribute('href'), projectUrl) !== buildId) {
-      throw new Error(`Cannot verify the download link for tracked As-built ${buildId}`);
+      throw new ExportError('BUILD_IDENTITY_ERROR', `Cannot verify the download link for tracked As-built ${buildId}`);
     }
     const downloadVisible = await downloadLink.isVisible();
     const state = JSON.stringify([progress, status, downloadVisible]);
@@ -202,8 +206,11 @@ async function waitForAsBuiltDownload(
           downloadLink.click(),
         ]);
         logger.info('ZIP download started; saving to destination and waiting for completion', downloadContext);
-        await download.saveAs(destination);
+        await saveExportDownload(download, destination, downloadContext);
         return destination;
+      } catch (error) {
+        if (error instanceof ExportError) throw error;
+        throw new ExportError('DOWNLOAD_ERROR', error instanceof Error ? error.message : String(error), { cause: error });
       } finally {
         stopStatusUpdates();
       }
@@ -238,14 +245,9 @@ export async function exportProject(
   }
 
   const downloadDirectory = path.join(downloadRoot, project.projectCleanName);
+  let errorType: ExportErrorType = 'PROJECTS_PAGE_ERROR';
 
   try {
-    await fs.mkdir(downloadDirectory, { recursive: true });
-    logger.debug('Download directory ready', {
-      projectUid: project.projectUid,
-      downloadDirectory,
-    });
-
     const projectsUrl = new URL(URLS.projects);
     const currentUrl = new URL(page.url());
     const canReuseProjectsPage = options.reuseProjectsPage
@@ -271,8 +273,10 @@ export async function exportProject(
     await page.waitForTimeout(timeouts.projectsPageSettleMs);
     logger.info('Projects landing page ready for project search', { projectName: project.projectName });
 
+    errorType = 'PROJECT_SELECTION_ERROR';
     await selectProject(page, project);
 
+    errorType = 'EXPORT_FORM_ERROR';
     logger.info('Opening project Settings');
     await page.locator(PROJECT_SELECTORS.settingsLink).click();
     await page.waitForLoadState('domcontentloaded');
@@ -297,7 +301,9 @@ export async function exportProject(
         pageType: 'table',
         exportType,
       });
+      errorType = 'BUILD_IDENTITY_ERROR';
       previousBuildIds = await readBuildIds(page, projectUrl);
+      errorType = 'EXPORT_FORM_ERROR';
       logger.info('Existing As-built IDs captured; generating immediately without waiting for older builds', {
         projectName: project.projectName, previousBuildCount: previousBuildIds.size,
       });
@@ -357,7 +363,9 @@ export async function exportProject(
       exportType,
     });
 
+    errorType = 'BUILD_IDENTITY_ERROR';
     const buildId = await identifyNewBuild(page, project, projectUrl, previousBuildIds);
+    errorType = 'BUILD_MONITORING_ERROR';
     const savedFile = await waitForAsBuiltDownload(page, project, downloadDirectory, buildId, projectUrl);
     logger.success('As-built ZIP saved', { projectUid: project.projectUid, buildId, savedFile });
     return {
@@ -368,7 +376,10 @@ export async function exportProject(
       durationMs: Date.now() - startedAt,
     };
   } catch (error) {
+    if (error instanceof ExportError) errorType = error.errorType;
     logError(`Project ${project.projectUid || project.projectName} failed`, error, {
+      errorType,
+      projectUid: project.projectUid,
       projectName: project.projectName,
       startDate: project.startDate,
       endDate: project.endDate,
@@ -377,6 +388,7 @@ export async function exportProject(
     return {
       project,
       status: 'FAILED',
+      errorType,
       message: error instanceof Error ? error.message : String(error),
       downloadDirectory,
       durationMs: Date.now() - startedAt,
