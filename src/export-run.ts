@@ -1,8 +1,10 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import timers from 'node:timers/promises';
 import type { ExportSelection, RetrySource, SelectedProject } from './export-selection.js';
 import { EXPORT_ERROR_TYPES, type ProjectResult } from './types.js';
+import { logger } from './logger.js';
 
 type RunProjectStatus = 'PENDING' | 'IN_PROGRESS' | 'INTERRUPTED' | ProjectResult['status'];
 interface RunProject extends SelectedProject {
@@ -24,6 +26,7 @@ export interface ExportRunReport {
   rootRunId: string;
   sourceReport?: string;
   status: 'RUNNING' | 'COMPLETED' | 'ABORTED';
+  executionSummary: ReturnType<typeof summarizeRun>;
   startedAt: string;
   updatedAt: string;
   completedAt?: string;
@@ -32,7 +35,6 @@ export interface ExportRunReport {
   csvHeaders: string[];
   selection: { skip?: number; limit?: number; csvTotal: number; enabledTotal: number };
   projects: RunProject[];
-  summary: ReturnType<typeof summarizeRun>;
 }
 
 function summarizeRun(projects: readonly RunProject[]) {
@@ -65,19 +67,71 @@ function failedCsv(report: ExportRunReport): string {
   return [header, ...rows, ''].join('\r\n');
 }
 
+const reportWriteRetryDelays = [1_000, 2_000, 4_000, 8_000];
+
+function errorCode(error: unknown): string | undefined {
+  return error instanceof Error && 'code' in error && typeof error.code === 'string' ? error.code : undefined;
+}
+
+export class ReportWriteError extends Error {
+  readonly code: string | undefined;
+
+  constructor(readonly filePath: string, cause: unknown) {
+    const code = errorCode(cause);
+    const advice = ['EPERM', 'EACCES', 'EBUSY'].includes(code ?? '')
+      ? 'The file may be locked or access denied. Close this run\'s CSV and JSON in Excel, editors, and preview panes. '
+      : '';
+    super(`Could not update export report "${filePath}"${code ? ` (${code})` : ''}. ${advice}`
+      + `Check folder permissions and available disk space. No further projects will start. `
+      + `Details: ${cause instanceof Error ? cause.message : String(cause)}`, { cause });
+    this.name = 'ReportWriteError';
+    this.code = code;
+  }
+}
+
 async function atomicWrite(filePath: string, content: string): Promise<void> {
   const temporary = `${filePath}.${randomUUID()}.tmp`;
   try {
     await fs.writeFile(temporary, content, { flag: 'wx' });
-    await fs.rename(temporary, filePath);
-  } finally {
-    await fs.rm(temporary, { force: true });
+    for (let retry = 0; ; retry += 1) {
+      try {
+        await fs.rename(temporary, filePath);
+        if (retry > 0) logger.info('Run report saved after retrying file access', { filePath });
+        return;
+      } catch (error) {
+        const code = errorCode(error);
+        const delayMs = reportWriteRetryDelays[retry];
+        if (!['EPERM', 'EACCES', 'EBUSY'].includes(code ?? '') || delayMs === undefined) throw error;
+        logger.warn('Run report may be locked or access denied; retrying report save', {
+          filePath, code, retry: retry + 1, maxRetries: reportWriteRetryDelays.length, delayMs,
+          instruction: 'Close this run\'s CSV and JSON in Excel, editors, and preview panes now. No further projects start until both reports are saved.',
+        });
+        await timers.setTimeout(delayMs);
+      }
+    }
+  } catch (error) {
+    // A cleanup failure must not hide the report path and original write error.
+    if (errorCode(error) !== 'EEXIST') {
+      try {
+        await fs.rm(temporary, { force: true });
+      } catch (cleanupError) {
+        logger.warn('Could not remove temporary run-report file', {
+          temporary, error: cleanupError instanceof Error ? cleanupError.message : String(cleanupError),
+        });
+      }
+    }
+    throw new ReportWriteError(filePath, error);
   }
 }
 
 export class ExportRun {
   readonly reportPath: string;
   readonly failedCsvPath: string;
+  private savedReports = { json: false, csv: false };
+
+  get persistence(): Readonly<{ json: boolean; csv: boolean }> {
+    return { ...this.savedReports };
+  }
 
   private constructor(readonly directory: string, readonly report: ExportRunReport) {
     this.reportPath = path.join(directory, 'results.json');
@@ -105,13 +159,14 @@ export class ExportRun {
       kind: 'plangrid-export-run', schemaVersion: 1, runId, runType: selection.runType,
       parentRunId: selection.parentRunId, rootRunId: selection.rootRunId ?? runId,
       sourceReport: selection.sourceReport, status: 'RUNNING', startedAt, updatedAt: startedAt,
+      executionSummary: summarizeRun(projects),
       inputFile: options.inputFile, logFile: options.logFile,
       csvHeaders: [...(options.csvHeaders ?? projects[0]?.project.sourceCsv?.headers
         ?? ['project_uid', 'project_name', 'project_clean_name', 'enabled', 'start_date', 'end_date', 'excel_name'])],
       selection: {
         skip: selection.skip, limit: selection.limit, csvTotal: selection.csvTotal, enabledTotal: selection.enabledTotal,
       },
-      projects, summary: summarizeRun(projects),
+      projects,
     });
     await run.save();
     return run;
@@ -119,16 +174,22 @@ export class ExportRun {
 
   private async save(): Promise<void> {
     this.report.updatedAt = new Date().toISOString();
-    this.report.summary = summarizeRun(this.report.projects);
+    this.report.executionSummary = summarizeRun(this.report.projects);
+    this.savedReports = { json: false, csv: false };
     // JSON is authoritative. A CSV write failure also stops execution before another export.
     await atomicWrite(this.reportPath, `${JSON.stringify(this.report, null, 2)}\n`);
+    this.savedReports.json = true;
     await atomicWrite(this.failedCsvPath, failedCsv(this.report));
+    this.savedReports.csv = true;
   }
 
   async execute(index: number, action: () => Promise<ProjectResult>): Promise<ProjectResult> {
     const entry = this.report.projects[index];
     if (this.report.status !== 'RUNNING' || !entry || entry.status !== 'PENDING') {
       throw new Error('Only a pending project in the current run may be executed');
+    }
+    if (!this.savedReports.json || !this.savedReports.csv) {
+      throw new Error('Run reports must be saved before another project can start');
     }
     entry.status = 'IN_PROGRESS';
     entry.startedAt = new Date().toISOString();
@@ -145,7 +206,7 @@ export class ExportRun {
   }
 
   async finish(aborted = false): Promise<void> {
-    if (this.report.status !== 'RUNNING') return;
+    if (this.report.status !== 'RUNNING' && this.savedReports.json && this.savedReports.csv) return;
     if (!aborted && this.report.projects.some(({ status }) => status === 'PENDING' || status === 'IN_PROGRESS')) {
       throw new Error('Cannot complete a run with unfinished projects');
     }

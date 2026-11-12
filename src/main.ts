@@ -7,30 +7,12 @@ import { connectToExistingChrome } from './chrome-session.js';
 import { readProjectInput } from './csv.js';
 import { logError, logger, logFilePath, wasErrorLogged } from './logger.js';
 import { exportProject } from './project-exporter.js';
-import { logExportSummary } from './export-summary.js';
+import { logExportSummary, logRunReport } from './export-summary.js';
 import { parseExportOptions, selectExportProjects } from './export-selection.js';
-import { ExportRun, readRetrySource, resolveRetryReportPath, retryCommand } from './export-run.js';
+import { ExportRun, readRetrySource, resolveRetryReportPath } from './export-run.js';
 import type { ProjectResult } from './types.js';
 
-function logRunReport(run: ExportRun): void {
-  logger.general('Export run report', {
-    runId: run.report.runId,
-    runType: run.report.runType,
-    parentRunId: run.report.parentRunId,
-    rootRunId: run.report.rootRunId,
-    status: run.report.status,
-    resultsFile: run.reportPath,
-    failedProjectsFile: run.failedCsvPath,
-    ...run.report.summary,
-  });
-  if (run.report.summary.failed > 0) {
-    logger.general('Retry only the failures recorded in this report', {
-      command: retryCommand(run.report.runId,
-        connectChrome ? 'chrome' : browserOptions.headless ? 'headless' : 'visible'),
-      instruction: 'Use this new report for the next retry; earlier reports retain their original failures.',
-    });
-  }
-}
+const exportMode = connectChrome ? 'chrome' : browserOptions.headless ? 'headless' : 'visible';
 
 async function main(): Promise<void> {
   let browser: Browser | undefined;
@@ -81,6 +63,9 @@ async function main(): Promise<void> {
         instruction: 'Review PENDING, IN_PROGRESS, or INTERRUPTED records separately; they are not automatically retried.',
       });
     }
+    logger.info('Keep run reports closed while exports are running', {
+      instruction: 'Keep failed-projects.csv and results.json closed in Excel, editors, and preview panes until the command exits. Use the terminal or log file for live progress.',
+    });
     run = await ExportRun.create({
       runsRoot: paths.runsRoot, selection, inputFile: paths.inputFile, logFile: logFilePath,
       csvHeaders: input.headers,
@@ -95,7 +80,7 @@ async function main(): Promise<void> {
       await run.finish();
       logger.info('No projects selected; browser startup skipped');
       logExportSummary([]);
-      logRunReport(run);
+      logRunReport(run, exportMode);
       return;
     }
 
@@ -176,7 +161,7 @@ async function main(): Promise<void> {
     await run.finish();
     if (results.some((result) => result.status === 'FAILED')) process.exitCode = 1;
     logExportSummary(results);
-    logRunReport(run);
+    logRunReport(run, exportMode);
 
     if (connectChrome) {
       logger.info('All selected projects have been processed; preserving the authenticated session');
@@ -191,15 +176,19 @@ async function main(): Promise<void> {
       logError('Automation failed', error);
     }
     process.exitCode = 1;
-    if (run?.report.status === 'RUNNING') {
-      try {
-        await run.finish(true);
-        logRunReport(run);
-      } catch (reportError) {
-        logError('Could not finalize the run report; execution stopped to preserve tracking', reportError, {
-          resultsFile: run.reportPath,
-        });
+    if (run) {
+      if (run.report.status === 'RUNNING' || !run.persistence.json || !run.persistence.csv) {
+        try {
+          await run.finish(true);
+        } catch (reportError) {
+          logError('Could not finalize the run report; execution stopped to preserve tracking', reportError, {
+            resultsFile: run.reportPath,
+            failedProjectsFile: run.failedCsvPath,
+          });
+        }
       }
+      // Always show known outcomes, even if a locked report also prevents finalization.
+      logRunReport(run, exportMode, true);
     }
   } finally {
     if (browser) {

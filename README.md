@@ -115,6 +115,8 @@ Keep the intended export pool enabled and use batch controls to choose the next 
 
 Complete the shared setup, configure `.env`, and prepare `input/projects.csv` first. Run the following steps separately from the repository folder, continuing only after the previous step succeeds. All commands work on **Windows Command Prompt, Windows PowerShell, macOS, and Linux**.
 
+**Keep `results.json` and `failed-projects.csv` closed while any export command is running.** Excel, editors, and file-preview panes can lock files, especially on Windows, preventing the script from updating its reports. Follow progress in the terminal or the run log under `logs/`, and open reports after the command exits. See [report file access and recovery](#report-file-access-and-recovery) if a save fails.
+
 | Step | Command | Result |
 | --- | --- | --- |
 | 1. [Download through Chrome](#step-1-existing-chrome-session) | **`npm run export:chrome`** | Downloads ZIPs for the selected enabled projects and saves a run report. |
@@ -213,7 +215,7 @@ runs/
     failed-projects.csv
 ```
 
-Folder names contain a UTC timestamp (`Z`), the run type, batch settings when applicable, and a uniqueness suffix. Startup logs also show the start time in IST. `results.json` records `runId`, `runType`, `parentRunId`, `rootRunId`, timestamps, selection settings, the selected project snapshots, original CSV headers and row values, per-project results, and summary counts. `parentRunId` identifies the immediately preceding report chosen for retry; `rootRunId` ties the entire retry chain to its original batch.
+Folder names contain a UTC timestamp (`Z`), the run type, batch settings when applicable, and a uniqueness suffix. Startup logs also show the start time in IST. `results.json` records `runId`, `runType`, `parentRunId`, `rootRunId`, timestamps, selection settings, the selected project snapshots, original CSV headers and row values, per-project results, and summary counts. The `executionSummary` section appears near the top, before the `projects` array, showing selected, successful, failed, skipped, pending, in-progress, and interrupted counts. Older reports with the original `summary` field remain valid for retries and are not rewritten. `parentRunId` identifies the immediately preceding report chosen for retry; `rootRunId` ties the entire retry chain to its original batch.
 
 `failed-projects.csv` contains one CSV record per FAILED project, preserving **every column from the input CSV in the same order**, followed by **`error`**. All decoded source values, including blank cells, whitespace, leading zeros, `action`, `sheets_count`, and future extra columns, are preserved through proper CSV quoting. For an input using your grouped-name layout, the failure header is:
 
@@ -255,6 +257,26 @@ Full report paths remain supported, such as `npm run export:chrome retry="runs/<
 Each retry saves a new report and leaves the source report unchanged. If 7 failures become 5 successes and 2 failures, use the **new retry report** to retry those remaining 2. Reusing the original report will select its original 7 failures again, including projects that succeeded in a later retry. Each retry requests a fresh build; no automatic retries are added.
 
 The selected list is saved before browser startup. Each project is saved as `IN_PROGRESS` before export and its final outcome is saved before another project starts. `PENDING` means it was never reached. A caught run-level failure marks the run `ABORTED`, preserving finished results and marking an active project `INTERRUPTED`; untouched projects remain pending. A hard stop, including terminating the process, can leave a `RUNNING` report and an `IN_PROGRESS` project. Review these unfinished states separately: retry mode selects only explicit `FAILED` outcomes and never assumes an unfinished export is safe to repeat. A report-writing error stops execution before the next export. JSON is authoritative if the readable CSV cannot be updated. `COMPLETED` means project processing finished; individual failures remain visible, and subsequent logout/browser cleanup errors are recorded in the run log.
+
+###### Report file access and recovery
+
+This applies to Chrome export, visible automated login, and headless export. Keep both files in the active `runs/<run-id>/` folder closed until execution finishes. The script does not make reports read-only or prevent other applications from opening them. Opening a file does not always lock it, but applications such as Excel can prevent Windows from replacing it. Do not edit or save active reports. Use the terminal or log file for live progress; if you need to inspect a report during execution, inspect a separate copy and leave the original closed.
+
+A lock or permission issue can produce an error such as:
+
+```text
+EPERM: operation not permitted, rename ...tmp -> ...failed-projects.csv
+```
+
+The script warns with the affected path and retries report replacement after **1, 2, 4, and 8 seconds** for `EPERM`, `EACCES`, or `EBUSY`. Close the file and its viewer or preview pane when the warning appears. If access recovers, the same report save completes and processing continues; these retries do not repeat an export or request another build. Other write errors, such as a full disk, stop processing immediately with file-access guidance.
+
+If saving still fails, no further projects start. The script attempts to mark the run `ABORTED`, then prints the known outcome counts and **every known FAILED project** to the terminal and log, even if final report saving also fails. It explicitly says whether JSON and CSV were updated. These counts reflect results held in memory; a file that could not be updated may contain older data.
+
+- **CSV blocked, JSON updated:** `results.json` is authoritative and retains the latest saved outcomes, including successful downloads. `failed-projects.csv` may be stale and contains failures only; successful projects are never included there. The logged retry command uses JSON.
+- **JSON blocked:** the on-disk report may be missing the latest outcome or final run status. Review the terminal/log entries and downloaded ZIPs before deciding what to rerun. The script does not print a failure-retry command based on results it could not save.
+- **Projects not reached:** remain `PENDING`; an active unfinished project becomes `INTERRUPTED` when abort finalization is saved. Neither is automatically included in failure retries. A report-save error after a ZIP was saved does not undo the download or turn that successful project into a failed export.
+
+After the command exits, close report viewers and check folder write permissions, available disk space, and any security or synchronization software holding the file. Review the current JSON and logs before starting another run; closing a file after execution has stopped does not resume that run. Existing run files are not automatically repaired or regenerated.
 
 Batch and retry controls currently apply **only to exports**. `npm run unzip`, `npm run sync:prepare`, and `npm run drawing:prepare` still process enabled CSV projects using their existing local rules; they do not read export run reports or apply batch offsets.
 

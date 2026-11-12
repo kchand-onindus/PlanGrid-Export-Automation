@@ -4,9 +4,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync, type SpawnSyncReturns } from 'node:child_process';
 import { test, type TestContext } from 'node:test';
+import timers from 'node:timers/promises';
 import { parse } from 'csv-parse/sync';
 import { parseExportOptions, selectExportProjects } from './export-selection.js';
-import { ExportRun, readRetrySource, resolveRetryReportPath, retryCommand, type ExportRunReport } from './export-run.js';
+import { ExportRun, ReportWriteError, readRetrySource, resolveRetryReportPath, retryCommand, type ExportRunReport } from './export-run.js';
+import { logRunReport } from './export-summary.js';
+import { logger, type LogContext } from './logger.js';
 import { readProjectInput, readProjects } from './csv.js';
 import type { ExportErrorType, Project, ProjectResult } from './types.js';
 
@@ -39,6 +42,16 @@ function result(project: Project, status: ProjectResult['status']): ProjectResul
     errorType: status === 'FAILED' ? 'PROJECT_NOT_FOUND' : undefined,
     message: status === 'FAILED' ? 'Not found, with "quotes"\nand a new line\nCall log:\n  - waiting for locator("project")' : 'Done',
   };
+}
+
+function reportLogs(t: TestContext) {
+  const logs: { level: string; message: string; context?: LogContext }[] = [];
+  for (const level of ['general', 'info', 'warn', 'error'] as const) {
+    t.mock.method(logger, level, (message: string, context?: LogContext) => logs.push({ level, message, context }));
+  }
+  const delays: number[] = [];
+  t.mock.method(timers, 'setTimeout', async (delayMs: number) => { delays.push(delayMs); });
+  return { logs, delays };
 }
 
 test('batch arguments default to all enabled projects and override environment independently', () => {
@@ -162,12 +175,12 @@ test('run snapshots persist before execution, after each outcome, and across sep
   assert.match(initial.runId, /^\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}-\d{3}Z_batch_skip-0_limit-50_[a-f0-9]{8}$/);
   assert.equal(initial.rootRunId, initial.runId);
   assert.equal(initial.status, 'RUNNING');
-  assert.deepEqual(initial.summary, { selected: 3, success: 0, failed: 0, skipped: 0, pending: 3, inProgress: 0, interrupted: 0 });
+  assert.deepEqual(initial.executionSummary, { selected: 3, success: 0, failed: 0, skipped: 0, pending: 3, inProgress: 0, interrupted: 0 });
   for (const [index, current] of projects.entries()) {
     await run.execute(index, async () => {
       const during = await report(run);
       assert.equal(during.projects[index].status, 'IN_PROGRESS');
-      assert.equal(during.summary.pending, projects.length - index - 1);
+      assert.equal(during.executionSummary.pending, projects.length - index - 1);
       assert.equal(during.projects.filter(({ status }) => status === 'SUCCESS' || status === 'FAILED').length, index);
       return result(current, index === 0 ? 'SUCCESS' : 'FAILED');
     });
@@ -175,7 +188,7 @@ test('run snapshots persist before execution, after each outcome, and across sep
   }
   await run.finish();
   const original = await fs.readFile(run.reportPath, 'utf8');
-  assert.equal((await report(run)).summary.failed, 2);
+  assert.equal((await report(run)).executionSummary.failed, 2);
   assert.equal((await report(run)).status, 'COMPLETED');
   assert.ok((await report(run)).completedAt);
   const failedRows = parse(await fs.readFile(run.failedCsvPath, 'utf8'), { columns: true }) as Record<string, string>[];
@@ -239,8 +252,8 @@ test('aborted and abruptly stopped runs preserve completed outcomes and separate
   const ended = await report(run);
   assert.equal(ended.status, 'ABORTED');
   assert.deepEqual(ended.projects.map(({ status }) => status), ['FAILED', 'INTERRUPTED', 'PENDING']);
-  assert.equal(ended.summary.interrupted, 1);
-  assert.equal(ended.summary.pending, 1);
+  assert.equal(ended.executionSummary.interrupted, 1);
+  assert.equal(ended.executionSummary.pending, 1);
   assert.deepEqual((await readRetrySource(run.reportPath)).failedCleanNames, ['Project-1']);
   await assert.rejects(run.execute(2, async () => result(projects[2], 'SUCCESS')), /pending project/);
 });
@@ -249,12 +262,12 @@ test('startup failures leave pending projects, and empty selections can finish w
   const { run, options } = await fixture(t);
   await assert.rejects(run.finish(), /unfinished/);
   await run.finish(true);
-  assert.equal((await report(run)).summary.pending, 3);
+  assert.equal((await report(run)).executionSummary.pending, 3);
   const selection = selectExportProjects([], { runType: 'batch', skip: 100, limit: 50 });
   const empty = await ExportRun.create({ ...options, selection });
   await empty.finish();
   assert.equal((await report(empty)).status, 'COMPLETED');
-  assert.equal((await report(empty)).summary.selected, 0);
+  assert.equal((await report(empty)).executionSummary.selected, 0);
   assert.equal(await fs.readFile(empty.failedCsvPath, 'utf8'),
     'project_uid,project_name,project_clean_name,enabled,start_date,end_date,excel_name,error\r\n');
   assert.deepEqual((await readRetrySource(empty.reportPath)).failedCleanNames, []);
@@ -318,6 +331,165 @@ test('CSV report failure also stops execution, while the authoritative JSON reta
   assert.equal((await report(run)).projects[0].status, 'FAILED');
   mock.mock.restore();
   await run.finish(true);
+});
+
+test('temporary report locks recover without repeating exports or changing failure CSV contents', async (t) => {
+  for (const code of ['EPERM', 'EACCES', 'EBUSY']) {
+    await t.test(code, async (t) => {
+      const { run, projects } = await fixture(t);
+      const { logs, delays } = reportLogs(t);
+      const rename = fs.rename;
+      let actions = 0;
+      let lockedAttempts = 0;
+      t.mock.method(fs, 'rename', async (source: Parameters<typeof fs.rename>[0], destination: Parameters<typeof fs.rename>[1]) => {
+        if (destination === run.failedCsvPath && actions === 1 && lockedAttempts++ < 2) {
+          throw Object.assign(new Error('Report file is open'), { code });
+        }
+        return rename(source, destination);
+      });
+      await run.execute(0, async () => { actions += 1; return result(projects[0], 'FAILED'); });
+      await run.execute(1, async () => { actions += 1; return result(projects[1], 'SUCCESS'); });
+      assert.equal(actions, 2);
+      assert.deepEqual(delays, [1_000, 2_000]);
+      assert.deepEqual(run.persistence, { json: true, csv: true });
+      assert.deepEqual((await report(run)).projects.map(({ status }) => status), ['FAILED', 'SUCCESS', 'PENDING']);
+      const failures = parse(await fs.readFile(run.failedCsvPath, 'utf8'), { columns: true }) as Record<string, string>[];
+      assert.deepEqual(failures.map(({ project_clean_name }) => project_clean_name), ['Project-1']);
+      assert.ok(logs.some(({ context }) => context?.filePath === run.failedCsvPath && context?.code === code));
+      assert.ok(logs.some(({ message }) => message === 'Run report saved after retrying file access'));
+      assert.deepEqual((await fs.readdir(run.directory)).sort(), ['failed-projects.csv', 'results.json']);
+    });
+  }
+});
+
+test('persistent CSV locks preserve the latest success in JSON and log every known failure even if abort saving fails', async (t) => {
+  const { run, projects } = await fixture(t, [project(1), project(2), project(3), project(4)]);
+  const { logs, delays } = reportLogs(t);
+  await run.execute(0, async () => result(projects[0], 'FAILED'));
+  await run.execute(1, async () => result(projects[1], 'FAILED'));
+  const previousCsv = await fs.readFile(run.failedCsvPath, 'utf8');
+  const rename = fs.rename;
+  let actions = 0;
+  t.mock.method(fs, 'rename', async (source: Parameters<typeof fs.rename>[0], destination: Parameters<typeof fs.rename>[1]) => {
+    if (destination === run.failedCsvPath && actions > 0) {
+      throw Object.assign(new Error('Report file is open'), { code: 'EPERM' });
+    }
+    return rename(source, destination);
+  });
+  await assert.rejects(run.execute(2, async () => { actions += 1; return result(projects[2], 'SUCCESS'); }), (error: unknown) => {
+    assert.ok(error instanceof ReportWriteError);
+    assert.equal(error.filePath, run.failedCsvPath);
+    assert.equal(error.code, 'EPERM');
+    assert.match(error.message, /Close this run's CSV and JSON/);
+    return true;
+  });
+  assert.deepEqual(delays, [1_000, 2_000, 4_000, 8_000]);
+  assert.equal(actions, 1);
+  assert.deepEqual(run.persistence, { json: true, csv: false });
+  await assert.rejects(run.execute(3, async () => { actions += 1; return result(projects[3], 'SUCCESS'); }), /reports must be saved/);
+  assert.equal(actions, 1, 'A report failure must prevent the next export');
+  await assert.rejects(run.finish(true), ReportWriteError);
+  logRunReport(run, 'chrome', true);
+  const saved = await report(run);
+  assert.equal(saved.status, 'ABORTED');
+  assert.deepEqual(saved.projects.map(({ status }) => status), ['FAILED', 'FAILED', 'SUCCESS', 'PENDING']);
+  assert.equal(await fs.readFile(run.failedCsvPath, 'utf8'), previousCsv);
+  assert.deepEqual(logs.filter(({ message }) => message === 'Failed project in stopped run')
+    .map(({ context }) => context?.projectCleanName), ['Project-1', 'Project-2']);
+  const summary = logs.find(({ message }) => message === 'Export run report')?.context;
+  assert.equal(summary?.success, 1);
+  assert.equal(summary?.pending, 1);
+  assert.equal(summary?.resultsJsonUpdated, true);
+  assert.equal(summary?.failedCsvUpdated, false);
+  assert.ok(logs.some(({ context }) => String(context?.instruction).includes('results.json is current')));
+  assert.ok(logs.some(({ context }) => context?.command === retryCommand(run.report.runId, 'chrome')));
+  assert.deepEqual((await fs.readdir(run.directory)).sort(), ['failed-projects.csv', 'results.json']);
+});
+
+test('a locked JSON report prevents the next action and logs unsaved failures without a misleading retry command', async (t) => {
+  const { run, projects } = await fixture(t);
+  const { logs, delays } = reportLogs(t);
+  await run.execute(0, async () => result(projects[0], 'FAILED'));
+  const before = await fs.readFile(run.reportPath, 'utf8');
+  const rename = fs.rename;
+  let actions = 0;
+  let blockedAttempts = 0;
+  const mock = t.mock.method(fs, 'rename', async (source: Parameters<typeof fs.rename>[0], destination: Parameters<typeof fs.rename>[1]) => {
+    if (destination === run.reportPath && actions > 0) {
+      blockedAttempts += 1;
+      throw Object.assign(new Error('JSON report is open'), { code: 'EBUSY' });
+    }
+    return rename(source, destination);
+  });
+  await assert.rejects(run.execute(1, async () => { actions += 1; return result(projects[1], 'FAILED'); }), ReportWriteError);
+  await assert.rejects(run.execute(2, async () => { actions += 1; return result(projects[2], 'SUCCESS'); }), /reports must be saved/);
+  assert.equal(actions, 1);
+  assert.equal(blockedAttempts, 5);
+  assert.deepEqual(delays, [1_000, 2_000, 4_000, 8_000]);
+  await assert.rejects(run.finish(true), ReportWriteError);
+  logRunReport(run, 'chrome', true);
+  // The on-disk IN_PROGRESS state predates the failed final save for the second project.
+  assert.notEqual(await fs.readFile(run.reportPath, 'utf8'), before);
+  assert.deepEqual((await report(run)).projects.map(({ status }) => status), ['FAILED', 'IN_PROGRESS', 'PENDING']);
+  assert.deepEqual(logs.filter(({ message }) => message === 'Failed project in stopped run')
+    .map(({ context }) => context?.projectCleanName), ['Project-1', 'Project-2']);
+  assert.ok(logs.some(({ context }) => String(context?.instruction).includes('results.json may be stale')));
+  assert.equal(logs.some(({ context }) => context?.command), false);
+  assert.deepEqual((await fs.readdir(run.directory)).sort(), ['failed-projects.csv', 'results.json']);
+  mock.mock.restore();
+  await run.finish(true);
+  assert.equal((await report(run)).status, 'ABORTED');
+  assert.deepEqual((await readRetrySource(run.reportPath)).failedCleanNames, ['Project-1', 'Project-2']);
+});
+
+test('unrecoverable report writes stop immediately and keep the original error if temporary cleanup also fails', async (t) => {
+  const { run, projects } = await fixture(t);
+  const { logs, delays } = reportLogs(t);
+  const previous = await fs.readFile(run.reportPath, 'utf8');
+  const writeFile = fs.writeFile;
+  const rm = fs.rm;
+  const writeMock = t.mock.method(fs, 'writeFile', async (...args: Parameters<typeof fs.writeFile>) => {
+    if (String(args[0]).startsWith(run.reportPath)) {
+      throw Object.assign(new Error('Disk is full'), { code: 'ENOSPC' });
+    }
+    return writeFile(...args);
+  });
+  const cleanupMock = t.mock.method(fs, 'rm', async (...args: Parameters<typeof fs.rm>) => {
+    if (String(args[0]).startsWith(run.reportPath)) throw new Error('Cleanup access denied');
+    return rm(...args);
+  });
+  let actions = 0;
+  await assert.rejects(run.execute(0, async () => { actions += 1; return result(projects[0], 'SUCCESS'); }), (error: unknown) => {
+    assert.ok(error instanceof ReportWriteError);
+    assert.equal(error.filePath, run.reportPath);
+    assert.equal(error.code, 'ENOSPC');
+    assert.match(error.message, /Disk is full/);
+    assert.match(error.message, /available disk space/);
+    return true;
+  });
+  assert.equal(actions, 0);
+  assert.deepEqual(delays, []);
+  assert.equal(await fs.readFile(run.reportPath, 'utf8'), previous);
+  assert.ok(logs.some(({ message }) => message === 'Could not remove temporary run-report file'));
+  writeMock.mock.restore();
+  cleanupMock.mock.restore();
+  await run.finish(true);
+});
+
+test('a failed completion save can still be finalized as aborted after file access recovers', async (t) => {
+  const { run, projects } = await fixture(t, [project(1)]);
+  reportLogs(t);
+  await run.execute(0, async () => result(projects[0], 'SUCCESS'));
+  const rename = fs.rename;
+  const mock = t.mock.method(fs, 'rename', async (source: Parameters<typeof fs.rename>[0], destination: Parameters<typeof fs.rename>[1]) => {
+    if (destination === run.failedCsvPath) throw Object.assign(new Error('Report file is open'), { code: 'EACCES' });
+    return rename(source, destination);
+  });
+  await assert.rejects(run.finish(), ReportWriteError);
+  mock.mock.restore();
+  await run.finish(true);
+  assert.equal((await report(run)).status, 'ABORTED');
+  assert.equal((await report(run)).projects[0].status, 'SUCCESS');
 });
 
 test('failure CSV preserves project metadata with classified errors, and retry commands support all export modes', async (t) => {
@@ -405,7 +577,9 @@ test('failure CSV mirrors all input columns and values across batching, empty ru
       }
       await run.finish();
       const originalReport = await fs.readFile(run.reportPath, 'utf8');
-      const legacy: Partial<ExportRunReport> = await report(run);
+      const legacy: Partial<ExportRunReport> & { summary?: ExportRunReport['executionSummary'] } = await report(run);
+      legacy.summary = legacy.executionSummary;
+      delete legacy.executionSummary;
       delete legacy.csvHeaders;
       for (const entry of legacy.projects ?? []) delete entry.project.sourceCsv;
       const legacyPath = path.join(path.dirname(options.inputFile), 'legacy-results.json');
