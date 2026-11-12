@@ -1,16 +1,15 @@
-import path from 'node:path';
 import { chromium, type Browser, type Page } from 'playwright';
 import { browserOptions } from '../playwright.config.js';
 import { connectChrome, paths, platformUrl, timeouts } from './config.js';
 import { URLS } from '../utils/constants.js';
 import { login, logout, verifyAttachedChromeSession, type LoginResult } from './auth.js';
 import { connectToExistingChrome } from './chrome-session.js';
-import { readProjects } from './csv.js';
+import { readProjectInput } from './csv.js';
 import { logError, logger, logFilePath, wasErrorLogged } from './logger.js';
 import { exportProject } from './project-exporter.js';
 import { logExportSummary } from './export-summary.js';
 import { parseExportOptions, selectExportProjects } from './export-selection.js';
-import { ExportRun, readRetrySource, retryCommand } from './export-run.js';
+import { ExportRun, readRetrySource, resolveRetryReportPath, retryCommand } from './export-run.js';
 import type { ProjectResult } from './types.js';
 
 function logRunReport(run: ExportRun): void {
@@ -26,7 +25,7 @@ function logRunReport(run: ExportRun): void {
   });
   if (run.report.summary.failed > 0) {
     logger.general('Retry only the failures recorded in this report', {
-      command: retryCommand(path.relative(paths.projectRoot, run.reportPath),
+      command: retryCommand(run.report.runId,
         connectChrome ? 'chrome' : browserOptions.headless ? 'headless' : 'visible'),
       instruction: 'Use this new report for the next retry; earlier reports retain their original failures.',
     });
@@ -55,14 +54,15 @@ async function main(): Promise<void> {
     }
 
     const options = parseExportOptions(process.argv.slice(2), process.env);
-    const projects = await readProjects(paths.inputFile);
+    const input = await readProjectInput(paths.inputFile);
+    const projects = input.projects;
     logger.info('Projects loaded from CSV', {
       totalProjects: projects.length,
       enabledProjects: projects.filter((project) => project.enabled).length,
     });
 
     const retry = options.runType === 'retry'
-      ? await readRetrySource(path.resolve(paths.projectRoot, options.reportPath)) : undefined;
+      ? await readRetrySource(resolveRetryReportPath(options.reportPath, paths)) : undefined;
     const selection = selectExportProjects(projects, options, retry);
     logger.info('Export project selection ready; CSV unchanged', {
       runType: selection.runType,
@@ -83,6 +83,7 @@ async function main(): Promise<void> {
     }
     run = await ExportRun.create({
       runsRoot: paths.runsRoot, selection, inputFile: paths.inputFile, logFile: logFilePath,
+      csvHeaders: input.headers,
     });
     logger.general('Timestamped export run created before browser startup', {
       runId: run.report.runId,
@@ -208,20 +209,18 @@ async function main(): Promise<void> {
         await logout(page);
       }
 
-      if (page && !browserOptions.headless) {
-        logger.warn(connectChrome ? 'Export session has ended; Chrome will remain open' : 'Session has ended; browser is about to close', {
-          instruction: connectChrome
-            ? 'Review the export results, then resume Playwright to disconnect. Chrome and its signed-in session will remain open.'
-            : 'Log out manually and complete any final verification, then resume Playwright.',
+      if (connectChrome) {
+        logger.info('Chrome session finished; disconnecting without an Inspector pause. Chrome remains open and signed in.');
+      } else if (page && !browserOptions.headless) {
+        logger.warn('Session has ended; browser is about to close', {
+          instruction: 'Log out manually and complete any final verification, then resume Playwright.',
         });
 
         try {
           await page.pause();
           logger.info('Final verification pause resumed');
         } catch (error) {
-          logError(connectChrome
-            ? 'Final verification pause failed; continuing with Chrome disconnect'
-            : 'Final verification pause failed; continuing with browser close', error);
+          logError('Final verification pause failed; continuing with browser close', error);
         }
       } else if (browserOptions.headless) {
         logger.debug('Headless session has ended; skipping final manual logout pause');

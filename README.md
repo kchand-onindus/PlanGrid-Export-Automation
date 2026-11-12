@@ -67,7 +67,7 @@ BATCH_SKIP=0
 BATCH_LIMIT=50
 ```
 
-`BATCH_SKIP` defaults to `0`; an unset or blank `BATCH_LIMIT` means all remaining enabled projects. The sample `.env.example` leaves the limit blank to preserve the unrestricted default. Skip/offset must be a non-negative integer; a specified limit must be a positive integer (`0` is invalid). Command-line `--skip` (alias `--offset`) and `--limit` override their respective settings. Failure retry mode ignores both environment settings. These controls apply only to the three export commands; unzip and both local preparation commands retain their existing CSV-driven selection.
+`BATCH_SKIP` defaults to `0`; an unset or blank `BATCH_LIMIT` means all remaining enabled projects. The sample `.env.example` leaves the limit blank to preserve the unrestricted default. Skip/offset must be a non-negative integer; a specified limit must be a positive integer (`0` is invalid). Command-line `skip=N` (alias `offset=N`) and `limit=N` override their respective settings. The original `--skip`/`--offset` and `--limit` flags are also supported. Failure retry mode ignores both environment settings. These controls apply only to the three export commands; unzip and both local preparation commands retain their existing CSV-driven selection.
 
 Execution reports are stored in **`runs/<run-id>/` at the repository root**, independently of `DOWNLOAD_DIR`. No output-directory setting is needed for reports.
 
@@ -92,7 +92,7 @@ project-12345,Another Project,Another_Project,true,2026-01-01,2026-08-31
 project-12346,Disabled Project,Disabled_Project,false,,
 ```
 
-The CSV must contain `project_uid`, `project_name`, `project_clean_name`, and `enabled` columns; `start_date` and `end_date` are optional. Column order may vary, and extra columns such as `action` are accepted and ignored. Header names must be unique, and every row must contain the same number of fields as the header, including blank fields. The example above replaces the old `project_number` header.
+The CSV must contain `project_uid`, `project_name`, `project_clean_name`, and `enabled` columns; `start_date`, `end_date`, and `excel_name` are optional. Column order may vary. Extra columns such as `action`, `sheets_count`, and future metadata fields are preserved in export reports but do not affect automation. Header names must be unique, and every row must contain the same number of fields as the header, including blank fields. The example above replaces the old `project_number` header.
 
 | Column | Purpose |
 | --- | --- |
@@ -101,6 +101,7 @@ The CSV must contain `project_uid`, `project_name`, `project_clean_name`, and `e
 | `project_clean_name` | Required folder name and ZIP base name, without the `.zip` extension. |
 | `enabled` | Required `true` or `false`; disabled projects are skipped. |
 | `start_date`, `end_date` | Optional dates in `YYYY-MM-DD` format. Blank values leave platform defaults unchanged. |
+| `excel_name` | Optional source label, preserved exactly in project snapshots and the failure CSV. It does not affect project selection, export settings, or filenames. Missing or blank values are supported. |
 
 `project_name` is the source of truth and is never trimmed or normalized. Include any leading/trailing spaces that exist in PlanGrid's name. CSV quotes are syntax, so `"Project, One "` produces the project name `Project, One` followed by one space, without the surrounding quotes. Empty or whitespace-only names are rejected.
 
@@ -140,12 +141,11 @@ Set up Chrome on the machine that will run the script:
 4. **Enable remote debugging on that page.** Keep Chrome running with this setting enabled.
 5. On macOS, if access to Chrome's connection metadata is denied, open **System Settings → Privacy & Security → Files & Folders**. Enable **Google Chrome** access for the terminal or host app running the script, then retry.
 
-Run the highlighted command from the repository folder, then complete these steps for each run:
+Run the highlighted command from the repository folder. For each execution:
 
 1. Click **Allow** if Chrome asks to share its debugging session.
-2. The script opens a new export tab and navigates to `https://app.plangrid.com/projects`. Wait for the projects page and visible project search box.
-3. Click **Resume ▶** in **Playwright Inspector**, the separate window opened by the script. The script verifies the projects URL and search box before starting exports. The first selected project reuses this page and repeats readiness checks before searching, without an extra navigation. If authentication cannot be verified, no exports start.
-4. After exports, review the browser at the final pause and click **Resume ▶** again to disconnect. Chrome and its tabs remain open and signed in. The script also skips logout during failure cleanup.
+2. The script opens a new export tab and navigates to `https://app.plangrid.com/projects`. It automatically verifies the projects URL and visible project search box, then starts exports **without an Inspector Resume step**. The first selected project reuses this page and repeats readiness checks before searching, without an extra navigation. If authentication cannot be verified, no exports start: sign in manually in Chrome, wait for the projects page and search box, then run the command again.
+3. After exports, the script saves and prints the results, then disconnects automatically **without a final Inspector pause**. Chrome and its tabs remain open and signed in. The script skips logout during failure cleanup and also disconnects without a pause when the run fails.
 
 For every selected project, the script opens **Settings → Download and Export As-Builts** and requests a fresh export. If previous builds exist, it captures every existing build ID from the table, including IDs in hidden links on processing rows, then immediately clicks **Generate a new As-built** to open the date form. It does not wait for older builds to finish. First-time projects open the form directly and start with no previous IDs. Both paths fill configured dates (blank CSV dates preserve platform defaults), uncheck **Current Set**, **Drawing Log**, and **Current Set Log** when present, and check every other Include option. The script verifies all final checkbox states before clicking **Zip File**; a missing checkbox list or a setting that cannot be verified fails the project before submission. One confirmation log records the checked and unchecked options for that project. This export behavior is shared by all three export commands, including explicit retries.
 
@@ -153,7 +153,7 @@ After returning to the table, the script compares its build IDs with the snapsho
 
 Failure detection is deliberately limited: a tracked build whose visible status is exactly **Failed**, **Error**, **Cancelled**, or **Canceled** (ignoring case and an optional final period/exclamation mark) fails that project. Unknown or blank status text alone is not treated as terminal; until the `100%`/visible-Download pair is met, it produces a warning and continued polling. Unusable page controls or a missing/duplicated tracked row fail through the existing control-readiness checks. Older builds' statuses do not determine the new build's outcome. Build generation and transfer have no overall timeout. Normal runs process their selected CSV range regardless of earlier reports; only an explicit retry command selects previous failures. Reports do not resume builds or partial downloads.
 
-After authentication, the first selected project reuses the projects page when its URL still matches. It waits for the page and search field to be ready even if Resume was clicked while the screen was still rendering. Later selected projects navigate to the landing page once before searching, including after a previous project fails or is not found. Each project is logged with its position/total within the run, its original CSV position/total, and its enabled-list position.
+After authentication, the first selected project reuses the projects page when its URL still matches. It waits for the page and search field to be ready even while the screen is still rendering. Later selected projects navigate to the landing page once before searching, including after a previous project fails or is not found. Each project is logged with its position/total within the run, its original CSV position/total, and its enabled-list position.
 
 | Projects-page step | Wait |
 |---|---|
@@ -179,23 +179,25 @@ For later runs, keep Chrome running, keep remote debugging enabled, and reuse th
 ##### Batch execution and failure retries
 
 ```bash
-npm run export:chrome -- --skip 0 --limit 50
+npm run export:chrome skip=0 limit=50
 ```
 
-This attempts enabled projects **1–50**, in CSV order. Complete the Chrome setup, Allow prompt, and Inspector Resume steps above for each execution. All commands here work in **Windows Command Prompt, Windows PowerShell, macOS, and Linux**; retain npm's `--` separator when passing arguments.
+This attempts enabled projects **1–50**, in CSV order. Complete the Chrome setup above and accept Chrome's Allow prompt if shown. Chrome-session batches and retries have no initial or final Inspector pause. All commands here work in **Windows Command Prompt, Windows PowerShell, macOS, and Linux**. The simple `key=value` arguments do not need npm's `--` separator.
 
 To run enabled projects **51–100**, then **101–150**, execute these separately:
 
 ```bash
-npm run export:chrome -- --skip 50 --limit 50
-npm run export:chrome -- --skip 100 --limit 50
+npm run export:chrome skip=50 limit=50
+npm run export:chrome skip=100 limit=50
 ```
 
-`--offset` is an alias for `--skip`, so the second batch can also be selected with:
+`offset=N` is an alias for `skip=N`, so the second batch can also be selected with:
 
 ```bash
-npm run export:chrome -- --offset 50 --limit 50
+npm run export:chrome offset=50 limit=50
 ```
+
+The original flag syntax remains supported: `npm run export:chrome -- --skip 50 --limit 50`. In that form, the first standalone `--` belongs to npm: it forwards the following dash-prefixed arguments to the export script. The later `--skip` and `--limit` are the script's flags. The separator is needed for flag-style batch and retry commands; it is unnecessary with the simpler `key=value` form.
 
 Alternatively, set `BATCH_SKIP` and `BATCH_LIMIT` globally in `.env` and run `npm run export:chrome` without arguments. A limit counts **attempted projects**, including failures. A batch of 50 can finish with 43 successes and 7 failures; the next batch still starts at skip 50. Disabled rows consume no slots. Selection and CSV validation happen before browser startup. Unknown arguments, invalid numbers, and invalid retry reports stop the command before browser startup. An empty range or a report with no failures creates an empty completed report and exits successfully without starting a browser.
 
@@ -211,19 +213,48 @@ runs/
     failed-projects.csv
 ```
 
-Folder names contain a UTC timestamp (`Z`), the run type, batch settings when applicable, and a uniqueness suffix. Startup logs also show the start time in IST. `results.json` records `runId`, `runType`, `parentRunId`, `rootRunId`, timestamps, selection settings, the selected project snapshots, per-project results, and summary counts. `parentRunId` identifies the immediately preceding report chosen for retry; `rootRunId` ties the entire retry chain to its original batch. `failed-projects.csv` contains one CSV record per FAILED project and only the standard project columns: `project_uid,project_name,project_clean_name,enabled,start_date,end_date`. It preserves project values exactly and contains no run metadata, error columns, or Playwright call logs. Error types and full error messages, including call logs, remain in `results.json` and the existing run logs under `logs/`. JSON drives retry selection. This format applies to newly generated reports; existing run files are not rewritten. Generated reports are ignored by Git.
+Folder names contain a UTC timestamp (`Z`), the run type, batch settings when applicable, and a uniqueness suffix. Startup logs also show the start time in IST. `results.json` records `runId`, `runType`, `parentRunId`, `rootRunId`, timestamps, selection settings, the selected project snapshots, original CSV headers and row values, per-project results, and summary counts. `parentRunId` identifies the immediately preceding report chosen for retry; `rootRunId` ties the entire retry chain to its original batch.
 
-To retry only failures from a chosen report:
+`failed-projects.csv` contains one CSV record per FAILED project, preserving **every column from the input CSV in the same order**, followed by **`error`**. All decoded source values, including blank cells, whitespace, leading zeros, `action`, `sheets_count`, and future extra columns, are preserved through proper CSV quoting. For an input using your grouped-name layout, the failure header is:
 
-```bash
-npm run export:chrome -- --retry-failed "runs/<run-id>/results.json"
+```csv
+project_uid,project_name,project_clean_name,excel_name,enabled,start_date,end_date,action,sheets_count,error
 ```
 
-Replace `<run-id>` with the actual directory name. The terminal prints the exact command whenever a run has failures. Relative report paths resolve from the repository root, and absolute paths also work. Retry mode **ignores `BATCH_SKIP` and `BATCH_LIMIT`** and rejects explicit `--skip`/`--offset`/`--limit` arguments. It matches FAILED records by the unchanged `project_clean_name` against the current CSV and uses the CSV's current exact project names, dates, and other details. This allows you to fix a name or date before retrying. A missing, renamed, or disabled clean name stops retry selection before opening a browser; it never silently chooses a different project or enables a disabled row.
+The input header is captured before browser startup, so even an empty batch produces the same failure CSV header. If the input already has an `error` column, its old value is replaced and the column is moved to the end, without duplication. The new `error` cell contains only a predefined classification such as `PROJECT_NOT_FOUND`, `BUILD_FAILED`, or `DOWNLOAD_ERROR`. Missing or unrecognized classifications, including the internal `UNKNOWN_ERROR` value, appear as `UNKNOWN`; refer to JSON or logs for details. Error messages and Playwright call logs are never added to that column. Full error details remain in `results.json` and the existing run logs under `logs/`. JSON drives retry selection, and each retry's failure CSV reflects the current input CSV read at the start of that retry. Column rearrangement does not affect normal execution or retry matching; row order still determines batch offsets. This format applies to newly generated reports; existing run files are not rewritten. Generated reports are ignored by Git.
+
+To retry only failures from a chosen batch or retry run, pass its run ID:
+
+```bash
+npm run export:chrome retry="<run-id>"
+```
+
+A **run ID is the entire folder name directly inside `runs/`**. Copy it from that folder, the `runId` printed in the terminal, or the `runId` field inside that folder's `results.json`. Names containing `_batch_skip-..._limit-..._` identify batch executions; names containing `_retry_` identify retry executions. The script fills in `runs/<run-id>/results.json` automatically, so you do not need to type `runs/` or `/results.json`. Keep `retry=` together with its value; extra spaces between arguments are fine, but spaces around `=` are not supported.
+
+| What you want to rerun | Which ID to pass |
+| --- | --- |
+| Failures from the original batch | That batch folder's run ID |
+| Failures remaining after a retry | The new retry folder's run ID |
+
+Using the example folders above, the first retry would be:
+
+```bash
+npm run export:chrome retry="2026-11-12_14-00-00-123Z_batch_skip-0_limit-50_a1b2c3d4"
+```
+
+If that retry produced the example retry folder and still had failures, run:
+
+```bash
+npm run export:chrome retry="2026-11-12_15-30-00-456Z_retry_e5f6a7b8"
+```
+
+Use your actual folder names in place of these examples. Each run with failures prints its exact short retry command, ready to copy. Use the latest retry's **`runId`** for remaining failures; `parentRunId` and `rootRunId` record its history and can refer to an older failure set.
+
+Full report paths remain supported, such as `npm run export:chrome retry="runs/<run-id>/results.json"` or an absolute JSON path. The original flag form also accepts either a run ID or a report path: `npm run export:chrome -- --retry-failed "<run-id>"`. Both syntaxes use JSON, not the failure CSV, to select projects. Relative report paths resolve from the repository root. A missing or invalid ID/report stops before browser startup; the script does not guess another run. Retry mode **ignores `BATCH_SKIP` and `BATCH_LIMIT`** and rejects explicit skip/offset/limit arguments in either syntax. It matches FAILED records by the unchanged `project_clean_name` against the current CSV and uses the CSV's current exact project names, dates, and other details. This allows you to fix a name or date before retrying. A missing, renamed, or disabled clean name stops retry selection before opening a browser; it never silently chooses a different project or enables a disabled row.
 
 Each retry saves a new report and leaves the source report unchanged. If 7 failures become 5 successes and 2 failures, use the **new retry report** to retry those remaining 2. Reusing the original report will select its original 7 failures again, including projects that succeeded in a later retry. Each retry requests a fresh build; no automatic retries are added.
 
-The selected list is saved before browser startup. Each project is saved as `IN_PROGRESS` before export and its final outcome is saved before another project starts. `PENDING` means it was never reached. A caught run-level failure marks the run `ABORTED`, preserving finished results and marking an active project `INTERRUPTED`; untouched projects remain pending. A hard stop, including terminating the process, can leave a `RUNNING` report and an `IN_PROGRESS` project. Review these unfinished states separately: `--retry-failed` selects only explicit `FAILED` outcomes and never assumes an unfinished export is safe to repeat. A report-writing error stops execution before the next export. JSON is authoritative if the readable CSV cannot be updated. `COMPLETED` means project processing finished; individual failures remain visible, and subsequent logout/browser cleanup errors are recorded in the run log.
+The selected list is saved before browser startup. Each project is saved as `IN_PROGRESS` before export and its final outcome is saved before another project starts. `PENDING` means it was never reached. A caught run-level failure marks the run `ABORTED`, preserving finished results and marking an active project `INTERRUPTED`; untouched projects remain pending. A hard stop, including terminating the process, can leave a `RUNNING` report and an `IN_PROGRESS` project. Review these unfinished states separately: retry mode selects only explicit `FAILED` outcomes and never assumes an unfinished export is safe to repeat. A report-writing error stops execution before the next export. JSON is authoritative if the readable CSV cannot be updated. `COMPLETED` means project processing finished; individual failures remain visible, and subsequent logout/browser cleanup errors are recorded in the run log.
 
 Batch and retry controls currently apply **only to exports**. `npm run unzip`, `npm run sync:prepare`, and `npm run drawing:prepare` still process enabled CSV projects using their existing local rules; they do not read export run reports or apply batch offsets.
 
@@ -260,9 +291,9 @@ Use this setup only if the script runs on another computer or server:
 1. Use a persistent desktop session accessible through Remote Desktop or VNC.
 2. Run Chrome and the script on that machine under the same OS user, and sign in to PlanGrid there. Deploying the repository does not transfer your laptop's signed-in session.
 3. Keep the Chrome profile, downloads, and logs on persistent storage.
-4. Complete Chrome's **Allow** prompt when shown and both **Resume ▶** steps in Playwright Inspector, as described above.
+4. Accept Chrome's **Allow** prompt when shown. The script verifies the authenticated projects page and disconnects after processing automatically; no Inspector Resume steps are needed.
 
-This mode still requires manual interaction and cannot currently run as an unattended scheduled job.
+This remains an interactive desktop workflow: Chrome's connection approval may require user action, and expired sessions require manual sign-in. Removing Inspector pauses does not establish unattended scheduling or automate CAPTCHA/OTP.
 
 ###### How the connection works (technical background)
 
@@ -429,8 +460,8 @@ Runs on macOS/Linux and Windows Command Prompt or PowerShell.
 Batch and explicit failure retry arguments are supported in this mode too:
 
 ```bash
-npm run export -- --skip 50 --limit 50
-npm run export -- --retry-failed "runs/<run-id>/results.json"
+npm run export skip=50 limit=50
+npm run export retry="<run-id>"
 ```
 
 Run these separately as needed. Each uses the automated-login prerequisites, manual verification steps, logout, and final pause described above. See [Batch execution and failure retries](#batch-execution-and-failure-retries) for selection rules and reports.
@@ -450,11 +481,11 @@ The script attempts automated login and exports without showing a browser or Ins
 This mode accepts the same batch and explicit retry arguments, subject to its authentication limitations:
 
 ```bash
-npm run headless -- --skip 50 --limit 50
-npm run headless -- --retry-failed "runs/<run-id>/results.json"
+npm run headless skip=50 limit=50
+npm run headless retry="<run-id>"
 ```
 
-Run these separately as needed. To list export arguments without opening a browser, use `npm run export:chrome -- --help`, `npm run export -- --help`, or `npm run headless -- --help`.
+Run these separately as needed. To list export arguments without opening a browser, use `npm run export:chrome help`, `npm run export help`, or `npm run headless help`. The original `-- --help` form also works.
 
 The npm commands set `HEADLESS` inside Node.js before loading the application, so no shell-specific environment-variable commands are needed. You can keep using Windows Command Prompt. To switch that session to Windows PowerShell, type `powershell` and press Enter; type `exit` to return to Command Prompt.
 
@@ -501,7 +532,7 @@ npm run test:drawings
 npm run test:import
 ```
 
-These checks use local tests and temporary fixtures; they do not launch a real login/export run or copy your downloaded projects. Run the checks relevant to your changes. `test:export` checks batch argument validation and precedence, enabled-only offsets, exact name preservation, timestamped reports, per-project persistence, retry chains and source-report preservation, missing/disabled retry records, unfinished-run states, report-write failures, CSV parsing, exact project-name selection among similar results, missing/duplicate exact-name failures, and simulated first-time/recurring export requests, checkbox verification, whole-table ID snapshots (including processing builds), ambiguity rejection, stable-ID polling despite reordered rows, conservative status handling, rejection of older downloads, initial-page reuse and readiness waits, recovery after project failures, error labels and summary counts, download naming, failed-download cleanup and preservation of previous output, and transfer-status scheduling/cleanup with a simulated clock; `test:unzip` checks extraction; `test:sync` checks Documents/Photos copying; `test:drawings` checks copying everything else; `test:import` checks Part B local preparation.
+These checks use local tests and temporary fixtures; they do not launch a real login/export run or copy your downloaded projects. Run the checks relevant to your changes. `test:export` checks attached-Chrome authentication readiness without Inspector pauses (including delayed search rendering and expired sessions), batch argument validation and precedence, enabled-only offsets, exact name preservation, timestamped reports, per-project persistence, retry chains and source-report preservation, missing/disabled retry records, unfinished-run states, report-write failures, CSV parsing, exact project-name selection among similar results, missing/duplicate exact-name failures, and simulated first-time/recurring export requests, checkbox verification, whole-table ID snapshots (including processing builds), ambiguity rejection, stable-ID polling despite reordered rows, conservative status handling, rejection of older downloads, initial-page reuse and readiness waits, recovery after project failures, error labels and summary counts, download naming, failed-download cleanup and preservation of previous output, and transfer-status scheduling/cleanup with a simulated clock; `test:unzip` checks extraction; `test:sync` checks Documents/Photos copying; `test:drawings` checks copying everything else; `test:import` checks Part B local preparation.
 
 ### Part B — Kahua import (in development)
 

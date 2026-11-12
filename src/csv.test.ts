@@ -3,7 +3,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { test, type TestContext } from 'node:test';
-import { readProjects } from './csv.js';
+import { readProjectInput, readProjects } from './csv.js';
 
 const headers = 'project_uid,project_name,project_clean_name,enabled,start_date,end_date';
 
@@ -42,6 +42,40 @@ test('preserves project_name exactly while trimming other configured fields', as
       startDate: '2026-01-01', endDate: undefined,
     }]);
   }
+});
+
+test('carries optional excel_name metadata exactly while accepting missing or blank values', async (t) => {
+  const content = `${headers},excel_name,action,sheets_count\nuid-1, Project ,Clean,true,,," Excel, ""One"" ",Migrate,10\n,Other,Other,false,,,,,\n`;
+  const file = await fixture(t, content);
+  const projects = await readProjects(file);
+  assert.equal(projects[0].excelName, ' Excel, "One" ');
+  assert.equal(projects[0].projectName, ' Project ');
+  assert.equal(projects[1].excelName, undefined);
+  assert.equal(await fs.readFile(file, 'utf8'), content);
+
+  const reordered = await fixture(t, 'excel_name,enabled,project_name,project_uid,project_clean_name\nExcel reference,true,Project,,Clean\n');
+  assert.equal((await readProjects(reordered))[0].excelName, 'Excel reference');
+  const absent = await fixture(t, `${headers}\n,Project,Clean,true,,\n`);
+  assert.equal((await readProjects(absent))[0].excelName, undefined);
+});
+
+test('export input retains the original header order and every decoded source cell for reporting', async (t) => {
+  const sourceHeaders = ['excel_name', 'action', 'sheets_count', 'project_name', 'enabled', 'project_clean_name', 'project_uid', 'custom_field'];
+  const sourceValues = [' Excel, "One" ', ' Migrate ', '0007', ' Exact Project ', ' TRUE ', ' Clean ', ' uid-1 ', ''];
+  const content = [sourceHeaders, sourceValues].map((row) => row.map((value) => `"${value.replace(/"/g, '""')}"`).join(',')).join('\r\n');
+  const file = await fixture(t, content);
+  const input = await readProjectInput(file);
+  assert.deepEqual(input.headers, sourceHeaders);
+  assert.deepEqual(input.projects[0].sourceCsv, { headers: sourceHeaders, values: sourceValues });
+  assert.equal(input.projects[0].projectUid, 'uid-1');
+  assert.equal(input.projects[0].projectCleanName, 'Clean');
+  assert.equal(input.projects[0].projectName, ' Exact Project ');
+  assert.equal(input.projects[0].enabled, true);
+  assert.equal((await readProjects(file))[0].sourceCsv, undefined);
+  assert.equal(await fs.readFile(file, 'utf8'), content);
+
+  const headerOnly = await fixture(t, sourceHeaders.join(','));
+  assert.deepEqual(await readProjectInput(headerOnly), { headers: sourceHeaders, projects: [] });
 });
 
 test('rejects the old schema rather than deriving an output name', async (t) => {

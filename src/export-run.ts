@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { ExportSelection, RetrySource, SelectedProject } from './export-selection.js';
-import type { ProjectResult } from './types.js';
+import { EXPORT_ERROR_TYPES, type ProjectResult } from './types.js';
 
 type RunProjectStatus = 'PENDING' | 'IN_PROGRESS' | 'INTERRUPTED' | ProjectResult['status'];
 interface RunProject extends SelectedProject {
@@ -29,6 +29,7 @@ export interface ExportRunReport {
   completedAt?: string;
   inputFile: string;
   logFile: string;
+  csvHeaders: string[];
   selection: { skip?: number; limit?: number; csvTotal: number; enabledTotal: number };
   projects: RunProject[];
   summary: ReturnType<typeof summarizeRun>;
@@ -47,11 +48,20 @@ function csvField(value: unknown): string {
 }
 
 function failedCsv(report: ExportRunReport): string {
-  const header = 'project_uid,project_name,project_clean_name,enabled,start_date,end_date';
-  const rows = report.projects.filter(({ status }) => status === 'FAILED').map(({ project }) => [
-    project.projectUid, project.projectName, project.projectCleanName, project.enabled,
-    project.startDate, project.endDate,
-  ].map(csvField).join(','));
+  // Replace a source error column rather than carrying an old value or adding a duplicate header.
+  const columns = report.csvHeaders.filter((name) => name.trim() !== 'error');
+  const header = [...columns, 'error'].map((name) => /[",\r\n]/.test(name) ? csvField(name) : name).join(',');
+  const rows = report.projects.filter(({ status }) => status === 'FAILED').map(({ project, errorType }) => {
+    const source = project.sourceCsv;
+    const fields: Record<string, unknown> = {
+      project_uid: project.projectUid, project_name: project.projectName, project_clean_name: project.projectCleanName,
+      enabled: project.enabled, start_date: project.startDate, end_date: project.endDate, excel_name: project.excelName,
+    };
+    const values = columns.map((name) => source
+      ? source.values[source.headers.indexOf(name)] ?? '' : fields[name.trim()] ?? '');
+    const error = errorType && errorType !== 'UNKNOWN_ERROR' && EXPORT_ERROR_TYPES.includes(errorType) ? errorType : 'UNKNOWN';
+    return [...values, error].map(csvField).join(',');
+  });
   return [header, ...rows, ''].join('\r\n');
 }
 
@@ -76,6 +86,7 @@ export class ExportRun {
 
   static async create(options: {
     runsRoot: string; selection: ExportSelection; inputFile: string; logFile: string;
+    csvHeaders?: readonly string[];
   }): Promise<ExportRun> {
     const { selection } = options;
     const startedAt = new Date().toISOString();
@@ -88,13 +99,15 @@ export class ExportRun {
     // Never reuse or overwrite a previous run directory.
     await fs.mkdir(directory);
     const projects: RunProject[] = selection.entries.map((entry) => ({
-      ...entry, project: { ...entry.project }, status: 'PENDING',
+      ...entry, project: structuredClone(entry.project), status: 'PENDING',
     }));
     const run = new ExportRun(directory, {
       kind: 'plangrid-export-run', schemaVersion: 1, runId, runType: selection.runType,
       parentRunId: selection.parentRunId, rootRunId: selection.rootRunId ?? runId,
       sourceReport: selection.sourceReport, status: 'RUNNING', startedAt, updatedAt: startedAt,
       inputFile: options.inputFile, logFile: options.logFile,
+      csvHeaders: [...(options.csvHeaders ?? projects[0]?.project.sourceCsv?.headers
+        ?? ['project_uid', 'project_name', 'project_clean_name', 'enabled', 'start_date', 'end_date', 'excel_name'])],
       selection: {
         skip: selection.skip, limit: selection.limit, csvTotal: selection.csvTotal, enabledTotal: selection.enabledTotal,
       },
@@ -152,6 +165,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+export function resolveRetryReportPath(target: string, locations: { projectRoot: string; runsRoot: string }): string {
+  if (/[/\\]/.test(target) || /\.json$/i.test(target)) {
+    return path.resolve(locations.projectRoot, target);
+  }
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(target)) {
+    throw new Error('Retry requires a run ID (the folder name inside runs/) or a path to a JSON results report');
+  }
+  return path.join(locations.runsRoot, target, 'results.json');
+}
+
 export async function readRetrySource(reportPath: string): Promise<RetrySource> {
   let value: unknown;
   try {
@@ -185,7 +208,7 @@ export async function readRetrySource(reportPath: string): Promise<RetrySource> 
   return { runId: value.runId, rootRunId: value.rootRunId, reportPath, unfinishedProjects, failedCleanNames };
 }
 
-export function retryCommand(reportPath: string, mode: 'chrome' | 'visible' | 'headless'): string {
+export function retryCommand(target: string, mode: 'chrome' | 'visible' | 'headless'): string {
   const script = mode === 'chrome' ? 'export:chrome' : mode === 'headless' ? 'headless' : 'export';
-  return `npm run ${script} -- --retry-failed "${reportPath.replace(/\\/g, '/')}"`;
+  return `npm run ${script} retry="${target.replace(/\\/g, '/')}"`;
 }

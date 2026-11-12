@@ -35,19 +35,17 @@ async function waitForAuthenticatedProjects(page: Page, timeoutMs: number): Prom
 }
 
 export async function verifyAttachedChromeSession(page: Page): Promise<LoginResult> {
-  logger.warn('Attached Chrome paused before exports', {
+  logger.info('Verifying attached Chrome session before exports', {
     instruction:
-      'Confirm the PlanGrid projects page and project search box are visible in the export tab, then click Resume in Playwright Inspector to start exports. Complete login in Chrome first if required.',
+      'Waiting automatically for the PlanGrid projects page and visible project search box. Sign in to PlanGrid in Chrome before running the export command.',
     expectedUrl: URLS.projects,
   });
-
-  await page.pause();
 
   try {
     await waitForAuthenticatedProjects(page, TIMEOUTS.navigationMs);
   } catch {
     throw new Error(
-      'The existing Chrome session could not be verified after Resume. Sign in to PlanGrid and wait for the projects page and visible project search box before resuming. No exports were started.',
+      'The existing Chrome session could not be verified. Sign in to PlanGrid in Chrome, wait for the projects page and visible project search box, then run the command again. No exports were started.',
     );
   }
 
