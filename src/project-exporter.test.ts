@@ -15,6 +15,13 @@ const includeNames = [
   'inc_sheets', 'inc_conformed', 'inc_master', 'inc_user_annotations', 'inc_photos',
   'inc_attach', 'inc_field_reports', 'inc_drawing_log', 'inc_curr_set_log',
 ];
+const excludedNames = ['inc_conformed', 'inc_drawing_log', 'inc_curr_set_log'];
+
+function assertIncludeSettings(checkboxes: { name: string; checked: boolean }[]): void {
+  for (const { name, checked } of checkboxes) {
+    assert.equal(checked, !excludedNames.includes(name), `Incorrect Include setting for ${name}`);
+  }
+}
 
 interface FixtureBuild {
   id: string;
@@ -34,7 +41,8 @@ async function createFixture(t: TestContext, options: {
   recurring?: boolean;
   blankDates?: boolean;
   checkboxNames?: string[];
-  uncheckedOption?: string;
+  unchangeableOption?: string;
+  revertOptionAfterSetup?: string;
   neverPublishNewBuild?: boolean;
   initialUrl?: string;
   navigationFailures?: number;
@@ -180,10 +188,14 @@ async function createFixture(t: TestContext, options: {
         if (selector === PROJECT_SELECTORS.downloadLink && name === 'href') return href(trackedBuild());
         assert.fail(`Unexpected attribute: ${selector}, ${name}`);
       },
-      check: async () => {
+      setChecked: async (checked: boolean) => {
         assert.equal(state.screen, 'form');
         const checkbox = state.checkboxes[index];
-        if (checkbox.name !== options.uncheckedOption) checkbox.checked = true;
+        if (checkbox.name !== options.unchangeableOption) checkbox.checked = checked;
+        if (index === state.checkboxes.length - 1 && options.revertOptionAfterSetup) {
+          const reverted = state.checkboxes.find(({ name }) => name === options.revertOptionAfterSetup)!;
+          reverted.checked = excludedNames.includes(reverted.name);
+        }
       },
       isChecked: async () => state.checkboxes[index].checked,
       click: async () => {
@@ -198,7 +210,7 @@ async function createFixture(t: TestContext, options: {
         } else if (selector === PROJECT_SELECTORS.zipOption) {
           assert.equal(state.screen, 'form');
           assert.ok(state.checkboxes.length > 0);
-          assert.ok(state.checkboxes.every(({ checked }) => checked), 'All options must be checked before submission');
+          assertIncludeSettings(state.checkboxes);
           state.zipClicks += 1;
           state.submitted = true;
           state.screen = 'table';
@@ -263,7 +275,7 @@ async function createFixture(t: TestContext, options: {
   return { root, page, project, state, logs, newPath };
 }
 
-test('first-time export fills dates, checks all options, polls, and saves using the exact clean name', async (t) => {
+test('first-time export fills dates, configures Include options, polls, and saves using the exact clean name', async (t) => {
   const { root, page, project, state, logs, newPath } = await createFixture(t);
   const result = await exportProject(page, project, root);
   const directory = path.join(root, project.projectCleanName);
@@ -279,12 +291,16 @@ test('first-time export fills dates, checks all options, polls, and saves using 
   assert.equal(state.endDate, project.endDate);
   assert.equal(state.generateClicks, 0);
   assert.equal(state.zipClicks, 1);
-  assert.ok(state.checkboxes.every(({ checked }) => checked));
+  assertIncludeSettings(state.checkboxes);
   assert.deepEqual(state.downloadedPaths, [newPath]);
   assert.equal(state.polls, 3);
   assert.ok(logs.some(({ context }) => context?.pageType === 'form' && context.exportType === 'first-time'));
   assert.ok(logs.some(({ context }) => context?.pageType === 'table' && context.exportType === 'first-time'));
-  assert.ok(logs.some(({ context }) => context?.checkboxCount === includeNames.length));
+  const includeLog = logs.find(({ context }) => context?.checkboxCount === includeNames.length);
+  assert.match(includeLog?.message ?? '', /Include settings verified/);
+  assert.deepEqual(includeLog?.context?.checkedOptions, includeNames.filter((name) => !excludedNames.includes(name)));
+  assert.deepEqual(includeLog?.context?.uncheckedOptions, excludedNames);
+  assert.equal(includeLog?.context?.projectName, project.projectName);
   const clickLog = logs.findIndex(({ message }) => message.includes('Clicking Download'));
   const saveStartedLog = logs.findIndex(({ message }) => message.startsWith('ZIP download started'));
   const savedLog = logs.findIndex(({ message }) => message === 'As-built ZIP saved');
@@ -444,12 +460,13 @@ test('recurring export generates a fresh build, fills the form, and ignores the 
   assert.equal(state.zipClicks, 1);
   assert.equal(state.startDate, project.startDate);
   assert.equal(state.endDate, project.endDate);
-  assert.ok(state.checkboxes.every(({ checked }) => checked));
+  assertIncludeSettings(state.checkboxes);
   assert.deepEqual(state.downloadedPaths, [newPath]);
   assert.equal(state.polls, 3);
   assert.ok(logs.some(({ context }) => context?.pageType === 'form' && context.exportType === 'recurring'));
   assert.equal(logs.filter(({ context }) => context?.pageType === 'table' && context.exportType === 'recurring').length, 2);
   assert.ok(logs.some(({ message }) => message.includes('existing builds will not be downloaded')));
+  assert.deepEqual(logs.find(({ context }) => context?.checkboxCount)?.context?.uncheckedOptions, excludedNames);
 });
 
 test('captures every old ID, including processing and failed rows, and generates without waiting for them', async (t) => {
@@ -581,7 +598,7 @@ test('requires both 100 percent and a visible link on the tracked build', async 
   }
 });
 
-test('blank dates preserve platform defaults and all present checkboxes are included', async (t) => {
+test('blank dates preserve platform defaults and additional Include options are checked', async (t) => {
   const checkboxNames = [...includeNames, 'inc_additional_option'];
   const { root, page, project, state, logs } = await createFixture(t, {
     recurring: true, blankDates: true, checkboxNames,
@@ -589,21 +606,64 @@ test('blank dates preserve platform defaults and all present checkboxes are incl
   assert.equal((await exportProject(page, project, root)).status, 'SUCCESS');
   assert.equal(state.startDate, '2020-01-01');
   assert.equal(state.endDate, '2030-12-31');
-  assert.ok(state.checkboxes.every(({ checked }) => checked));
-  assert.deepEqual(logs.find(({ context }) => context?.checkboxCount)?.context?.checkedOptions, checkboxNames);
+  assertIncludeSettings(state.checkboxes);
+  assert.deepEqual(logs.find(({ context }) => context?.checkboxCount)?.context?.checkedOptions,
+    checkboxNames.filter((name) => !excludedNames.includes(name)));
+  assert.deepEqual(logs.find(({ context }) => context?.checkboxCount)?.context?.uncheckedOptions, excludedNames);
 });
 
-test('missing or uncheckable include options fail before requesting or downloading a build', async (t) => {
-  for (const options of [{ checkboxNames: [] }, { uncheckedOption: 'inc_conformed' }]) {
-    await t.test(JSON.stringify(options), async (subtest) => {
-      const { root, page, project, state } = await createFixture(subtest, options);
-      const result = await exportProject(page, project, root);
-      assert.equal(result.status, 'FAILED');
-      assert.match(result.message ?? '', /checkbox/);
-      assert.equal(state.zipClicks, 0);
-      assert.deepEqual(state.downloadedPaths, []);
-      assert.equal(state.saved, '');
-    });
+test('both export paths enforce Include settings regardless of the initial checkbox states', async (t) => {
+  for (const recurring of [false, true]) {
+    for (const initialState of ['checked', 'unchecked', 'correct'] as const) {
+      await t.test(`${recurring ? 'recurring' : 'first-time'}: initially ${initialState}`, async (subtest) => {
+        const { root, page, project, state, logs } = await createFixture(subtest, { recurring });
+        for (const checkbox of state.checkboxes) {
+          checkbox.checked = initialState === 'correct' ? !excludedNames.includes(checkbox.name) : initialState === 'checked';
+        }
+        assert.equal((await exportProject(page, project, root)).status, 'SUCCESS');
+        assertIncludeSettings(state.checkboxes);
+        assert.equal(state.zipClicks, 1);
+        const confirmation = logs.findIndex(({ message }) => message.includes('Include settings verified'));
+        const submission = logs.findIndex(({ message }) => message.startsWith('Selecting Zip File'));
+        assert.ok(confirmation >= 0 && submission > confirmation);
+      });
+    }
+  }
+});
+
+test('absent optional exclusions do not prevent checking the remaining Include options', async (t) => {
+  const checkboxNames = ['inc_sheets', 'inc_photos', 'inc_additional_option'];
+  const { root, page, project, state, logs } = await createFixture(t, { checkboxNames });
+  assert.equal((await exportProject(page, project, root)).status, 'SUCCESS');
+  assertIncludeSettings(state.checkboxes);
+  const confirmation = logs.find(({ context }) => context?.checkboxCount);
+  assert.deepEqual(confirmation?.context?.checkedOptions, checkboxNames);
+  assert.deepEqual(confirmation?.context?.uncheckedOptions, []);
+});
+
+test('missing or unverifiable Include settings fail before requesting or downloading a build', async (t) => {
+  const cases = [
+    { checkboxNames: [] },
+    { unchangeableOption: 'inc_photos' },
+    ...excludedNames.map((name) => ({ unchangeableOption: name })),
+    { revertOptionAfterSetup: 'inc_sheets' },
+    { revertOptionAfterSetup: 'inc_conformed' },
+  ];
+  for (const recurring of [false, true]) {
+    for (const options of cases) {
+      await t.test(`${recurring ? 'recurring' : 'first-time'}: ${JSON.stringify(options)}`, async (subtest) => {
+        const { root, page, project, state, logs } = await createFixture(subtest, { recurring, ...options });
+        for (const checkbox of state.checkboxes) checkbox.checked = excludedNames.includes(checkbox.name);
+        const result = await exportProject(page, project, root);
+        assert.equal(result.status, 'FAILED');
+        assert.equal(result.errorType, 'EXPORT_FORM_ERROR');
+        assert.match(result.message ?? '', /checkbox/);
+        assert.equal(state.zipClicks, 0);
+        assert.deepEqual(state.downloadedPaths, []);
+        assert.equal(state.saved, '');
+        assert.equal(logs.some(({ message }) => message.includes('Include settings verified')), false);
+      });
+    }
   }
 });
 

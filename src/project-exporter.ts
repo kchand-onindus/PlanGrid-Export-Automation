@@ -4,7 +4,7 @@ import { timeouts } from './config.js';
 import { logError, logger, type LogContext } from './logger.js';
 import { ExportError } from './export-errors.js';
 import { saveExportDownload } from './export-download.js';
-import { PROJECT_SELECTORS, URLS } from '../utils/constants.js';
+import { AS_BUILT_EXCLUDED_CHECKBOX_NAMES, PROJECT_SELECTORS, URLS } from '../utils/constants.js';
 import type { ExportErrorType, Project, ProjectResult } from './types.js';
 
 async function selectProject(page: Page, project: Project): Promise<void> {
@@ -334,21 +334,26 @@ export async function exportProject(
     if (checkboxCount === 0) {
       throw new Error('No As-built include checkboxes were found; refusing to request an incomplete export');
     }
-    const checkedOptions: string[] = [];
+    const includeOptions: { name: string; shouldCheck: boolean }[] = [];
     for (let index = 0; index < checkboxCount; index += 1) {
       const checkbox = checkboxes.nth(index);
       const name = await checkbox.getAttribute('name') ?? `checkbox ${index + 1}`;
-      await checkbox.check();
-      if (!await checkbox.isChecked()) {
-        throw new Error(`As-built include checkbox "${name}" is not checked`);
-      }
-      checkedOptions.push(name);
+      const shouldCheck = !AS_BUILT_EXCLUDED_CHECKBOX_NAMES.includes(name);
+      await checkbox.setChecked(shouldCheck);
+      includeOptions.push({ name, shouldCheck });
     }
-    logger.success('All As-built include checkboxes are checked', {
+    // Verify the complete form after all changes, in case one control affects another.
+    for (const [index, { name, shouldCheck }] of includeOptions.entries()) {
+      if (await checkboxes.nth(index).isChecked() !== shouldCheck) {
+        throw new Error(`As-built include checkbox "${name}" is not ${shouldCheck ? 'checked' : 'unchecked'}`);
+      }
+    }
+    logger.success('As-built Include settings verified; Current Set, Drawing Log, and Current Set Log excluded', {
       projectName: project.projectName,
       exportType,
       checkboxCount,
-      checkedOptions,
+      checkedOptions: includeOptions.filter(({ shouldCheck }) => shouldCheck).map(({ name }) => name),
+      uncheckedOptions: includeOptions.filter(({ shouldCheck }) => !shouldCheck).map(({ name }) => name),
     });
 
     logger.info('Selecting Zip File to generate a fresh As-built', { exportType });

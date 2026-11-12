@@ -66,6 +66,12 @@ export const PROJECT_SELECTORS = {
   downloadLink: 'a.asbuilt-download',
 } as const;
 
+export const AS_BUILT_EXCLUDED_CHECKBOX_NAMES: readonly string[] = [
+  'inc_conformed', // Current Set
+  'inc_drawing_log', // Drawing Log
+  'inc_curr_set_log', // Current Set Log
+];
+
 export const LOGOUT_SELECTORS = {
   accountName: 'Vikas Handa',
   accountNameElement: 'span.button-text',
