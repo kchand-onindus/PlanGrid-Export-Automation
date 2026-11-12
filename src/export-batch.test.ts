@@ -35,7 +35,7 @@ function result(project: Project, status: ProjectResult['status']): ProjectResul
   return {
     project, status, durationMs: 25,
     errorType: status === 'FAILED' ? 'PROJECT_NOT_FOUND' : undefined,
-    message: status === 'FAILED' ? 'Not found, with "quotes"\nand a new line' : 'Done',
+    message: status === 'FAILED' ? 'Not found, with "quotes"\nand a new line\nCall log:\n  - waiting for locator("project")' : 'Done',
   };
 }
 
@@ -106,8 +106,17 @@ test('run snapshots persist before execution, after each outcome, and across sep
   assert.ok((await report(run)).completedAt);
   const failedRows = parse(await fs.readFile(run.failedCsvPath, 'utf8'), { columns: true }) as Record<string, string>[];
   assert.equal(failedRows.length, 2);
-  assert.equal(failedRows[0].project_name, projects[1].projectName);
-  assert.equal(failedRows[0].error_message, result(projects[1], 'FAILED').message);
+  assert.deepEqual(failedRows[0], {
+    project_uid: projects[1].projectUid,
+    project_name: projects[1].projectName,
+    project_clean_name: projects[1].projectCleanName,
+    enabled: 'true',
+    start_date: projects[1].startDate,
+    end_date: projects[1].endDate,
+  });
+  assert.equal((await report(run)).projects[1].message, result(projects[1], 'FAILED').message);
+  assert.equal((await report(run)).projects[1].errorType, 'PROJECT_NOT_FOUND');
+  assert.equal((await fs.readFile(run.failedCsvPath, 'utf8')).includes('Call log:'), false);
   assert.deepEqual(failedRows.map((row: Record<string, string>) => row.project_clean_name), ['Project-2', 'Project-3']);
 
   // A later CSV may be reordered and contain corrected details. Match by clean name, never row number or blank UID.
@@ -170,6 +179,8 @@ test('startup failures leave pending projects, and empty selections can finish w
   await empty.finish();
   assert.equal((await report(empty)).status, 'COMPLETED');
   assert.equal((await report(empty)).summary.selected, 0);
+  assert.equal(await fs.readFile(empty.failedCsvPath, 'utf8'),
+    'project_uid,project_name,project_clean_name,enabled,start_date,end_date\r\n');
   assert.deepEqual((await readRetrySource(empty.reportPath)).failedCleanNames, []);
 });
 
@@ -233,12 +244,17 @@ test('CSV report failure also stops execution, while the authoritative JSON reta
   await run.finish(true);
 });
 
-test('failure CSV can be read without losing exact names, and retry commands support all export modes', async (t) => {
+test('failure CSV contains only project data, preserves exact names, and retry commands support all export modes', async (t) => {
   const current = { ...project(1), projectName: ' \tQuoted "project", with\nnewline ' };
   const { root, run } = await fixture(t, [current]);
   await run.execute(0, async () => result(current, 'FAILED'));
   const parsed = await readProjects(run.failedCsvPath);
   assert.deepEqual(parsed, [current]);
+  const rows = parse(await fs.readFile(run.failedCsvPath, 'utf8')) as string[][];
+  assert.deepEqual(rows[0], ['project_uid', 'project_name', 'project_clean_name', 'enabled', 'start_date', 'end_date']);
+  assert.equal(rows.length, 2);
+  assert.ok(rows.every((row) => row.length === 6));
+  assert.match((await report(run)).projects[0].message ?? '', /\nCall log:\n/);
   const quotedPath = path.join(root, 'report with spaces', 'results.json');
   assert.match(retryCommand(quotedPath, 'chrome'), /^npm run export:chrome -- --retry-failed ".*report with spaces\/results.json"$/);
   assert.match(retryCommand('runs\\a\\results.json', 'visible'), /^npm run export -- --retry-failed "runs\/a\/results.json"$/);

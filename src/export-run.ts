@@ -47,10 +47,10 @@ function csvField(value: unknown): string {
 }
 
 function failedCsv(report: ExportRunReport): string {
-  const header = 'run_id,project_uid,project_name,project_clean_name,enabled,start_date,end_date,error_type,error_message';
-  const rows = report.projects.filter(({ status }) => status === 'FAILED').map(({ project, errorType, message }) => [
-    report.runId, project.projectUid, project.projectName, project.projectCleanName, project.enabled,
-    project.startDate, project.endDate, errorType, message,
+  const header = 'project_uid,project_name,project_clean_name,enabled,start_date,end_date';
+  const rows = report.projects.filter(({ status }) => status === 'FAILED').map(({ project }) => [
+    project.projectUid, project.projectName, project.projectCleanName, project.enabled,
+    project.startDate, project.endDate,
   ].map(csvField).join(','));
   return [header, ...rows, ''].join('\r\n');
 }
