@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { chromium, type Browser, type Page } from 'playwright';
 import { browserOptions } from '../playwright.config.js';
 import { connectChrome, paths, platformUrl, timeouts } from './config.js';
@@ -8,12 +9,36 @@ import { readProjects } from './csv.js';
 import { logError, logger, logFilePath, wasErrorLogged } from './logger.js';
 import { exportProject } from './project-exporter.js';
 import { logExportSummary } from './export-summary.js';
+import { parseExportOptions, selectExportProjects } from './export-selection.js';
+import { ExportRun, readRetrySource, retryCommand } from './export-run.js';
+import type { ProjectResult } from './types.js';
+
+function logRunReport(run: ExportRun): void {
+  logger.general('Export run report', {
+    runId: run.report.runId,
+    runType: run.report.runType,
+    parentRunId: run.report.parentRunId,
+    rootRunId: run.report.rootRunId,
+    status: run.report.status,
+    resultsFile: run.reportPath,
+    failedProjectsFile: run.failedCsvPath,
+    ...run.report.summary,
+  });
+  if (run.report.summary.failed > 0) {
+    logger.general('Retry only the failures recorded in this report', {
+      command: retryCommand(path.relative(paths.projectRoot, run.reportPath),
+        connectChrome ? 'chrome' : browserOptions.headless ? 'headless' : 'visible'),
+      instruction: 'Use this new report for the next retry; earlier reports retain their original failures.',
+    });
+  }
+}
 
 async function main(): Promise<void> {
   let browser: Browser | undefined;
   let page: Page | undefined;
   let canAttemptLogout = false;
   let logoutAttempted = false;
+  let run: ExportRun | undefined;
 
   try {
     logger.general('Starting PlanGrid export automation', {
@@ -29,11 +54,49 @@ async function main(): Promise<void> {
       throw new Error('Chrome session mode requires a visible browser; use `npm run export:chrome`.');
     }
 
+    const options = parseExportOptions(process.argv.slice(2), process.env);
     const projects = await readProjects(paths.inputFile);
     logger.info('Projects loaded from CSV', {
       totalProjects: projects.length,
       enabledProjects: projects.filter((project) => project.enabled).length,
     });
+
+    const retry = options.runType === 'retry'
+      ? await readRetrySource(path.resolve(paths.projectRoot, options.reportPath)) : undefined;
+    const selection = selectExportProjects(projects, options, retry);
+    logger.info('Export project selection ready; CSV unchanged', {
+      runType: selection.runType,
+      skip: selection.skip,
+      limit: selection.limit ?? (selection.runType === 'batch' ? 'all remaining' : undefined),
+      selectedProjects: selection.entries.length,
+      csvTotal: selection.csvTotal,
+      enabledTotal: selection.enabledTotal,
+      firstEnabledPosition: selection.entries[0]?.enabledPosition,
+      lastEnabledPosition: selection.entries.at(-1)?.enabledPosition,
+      parentRunId: selection.parentRunId,
+    });
+    if (retry?.unfinishedProjects) {
+      logger.warn('Retry source has unfinished projects; only explicit FAILED outcomes are selected', {
+        unfinishedProjects: retry.unfinishedProjects,
+        instruction: 'Review PENDING, IN_PROGRESS, or INTERRUPTED records separately; they are not automatically retried.',
+      });
+    }
+    run = await ExportRun.create({
+      runsRoot: paths.runsRoot, selection, inputFile: paths.inputFile, logFile: logFilePath,
+    });
+    logger.general('Timestamped export run created before browser startup', {
+      runId: run.report.runId,
+      startedAtUtc: run.report.startedAt,
+      startedAtIst: new Date(run.report.startedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour12: false }),
+      resultsFile: run.reportPath,
+    });
+    if (selection.entries.length === 0) {
+      await run.finish();
+      logger.info('No projects selected; browser startup skipped');
+      logExportSummary([]);
+      logRunReport(run);
+      return;
+    }
 
     logger.debug(connectChrome ? 'Connecting to existing Chrome; accept the Allow prompt in Chrome if shown' : 'Launching browser');
     let loginResult: LoginResult;
@@ -62,18 +125,22 @@ async function main(): Promise<void> {
 
     canAttemptLogout = true;
 
-    const results = [];
+    const results: ProjectResult[] = [];
     let reuseProjectsPage = true;
-    for (const [index, project] of projects.entries()) {
+    for (const [index, { project, csvPosition, enabledPosition }] of selection.entries.entries()) {
       logger.info('Processing project', {
         projectUid: project.projectUid,
         projectName: project.projectName,
         projectCleanName: project.projectCleanName,
         position: index + 1,
-        total: projects.length,
+        total: selection.entries.length,
+        csvPosition,
+        csvTotal: projects.length,
+        enabledPosition,
+        runId: run.report.runId,
       });
-      const result = await exportProject(page, project, paths.downloadRoot, { reuseProjectsPage });
-      if (project.enabled) reuseProjectsPage = false;
+      const result = await run.execute(index, () => exportProject(page!, project, paths.downloadRoot, { reuseProjectsPage }));
+      reuseProjectsPage = false;
       results.push(result);
 
       const resultLog = {
@@ -94,35 +161,45 @@ async function main(): Promise<void> {
       } else {
         logger.error('Project export failed', resultLog);
       }
-      if (project.enabled && result.status !== 'SUCCESS' && index + 1 < projects.length) {
-        logger.warn('Continuing with the next CSV project after this project was skipped or failed', {
+      if (result.status !== 'SUCCESS' && index + 1 < selection.entries.length) {
+        logger.warn('Continuing with the next selected project after this project was skipped or failed', {
           projectName: project.projectName,
           status: result.status,
           nextPosition: index + 2,
-          total: projects.length,
+          total: selection.entries.length,
           instruction: 'The next enabled project will open the projects landing page and repeat readiness checks.',
         });
       }
     }
 
+    await run.finish();
+    if (results.some((result) => result.status === 'FAILED')) process.exitCode = 1;
+    logExportSummary(results);
+    logRunReport(run);
+
     if (connectChrome) {
-      logger.info('All projects have been processed; preserving the authenticated session');
+      logger.info('All selected projects have been processed; preserving the authenticated session');
     } else {
-      logger.info('All projects have been processed; starting logout');
+      logger.info('All selected projects have been processed; starting logout');
       logoutAttempted = true;
       await logout(page);
     }
-
-    const failed = results.filter((result) => result.status === 'FAILED').length;
-    if (failed > 0) process.exitCode = 1;
-
-    logExportSummary(results);
   } catch (error) {
     // Log the actual failure before the browser cleanup starts.
     if (!wasErrorLogged(error)) {
       logError('Automation failed', error);
     }
     process.exitCode = 1;
+    if (run?.report.status === 'RUNNING') {
+      try {
+        await run.finish(true);
+        logRunReport(run);
+      } catch (reportError) {
+        logError('Could not finalize the run report; execution stopped to preserve tracking', reportError, {
+          resultsFile: run.reportPath,
+        });
+      }
+    }
   } finally {
     if (browser) {
       if (!connectChrome && page && canAttemptLogout && !logoutAttempted) {

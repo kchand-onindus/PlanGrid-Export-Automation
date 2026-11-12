@@ -10,6 +10,7 @@ export const connectChrome = process.argv.includes('--connect-chrome');
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 export const paths = {
+  projectRoot,
   inputFile: path.join(projectRoot, 'input', 'projects.csv'),
   downloadRoot: path.isAbsolute(process.env[ENV_KEYS.downloadDir] ?? '')
     ? process.env[ENV_KEYS.downloadDir]!
@@ -21,6 +22,7 @@ export const paths = {
     ? process.env[ENV_KEYS.drawingsDir]!
     : path.resolve(projectRoot, process.env[ENV_KEYS.drawingsDir] ?? 'drawings'),
   logRoot: path.join(projectRoot, 'logs'),
+  runsRoot: path.join(projectRoot, 'runs'),
 };
 
 export const timeouts = TIMEOUTS;

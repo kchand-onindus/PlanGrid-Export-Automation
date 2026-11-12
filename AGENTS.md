@@ -18,8 +18,8 @@ The working export application uses Playwright to:
 2. In automated mode, open PlanGrid, hand off authentication to Autodesk, and complete the email/password steps.
 3. Pause for manual Autodesk CAPTCHA, OTP, or other verification when required.
 4. Verify the authenticated PlanGrid projects page before continuing.
-5. Find enabled projects from `input/projects.csv`.
-6. Generate a fresh As-built for every enabled project, fill configured dates, uncheck Current Set, Drawing Log, and Current Set Log when present, check every other Include option, verify all final checkbox states, wait for completion, and download ZIP files. When previous builds exist, click Generate a new As-built first; never reuse an old download.
+5. Validate `input/projects.csv`, select enabled projects using global skip/limit settings or explicit failed-report retry selection, and save a timestamped run report before browser startup.
+6. Generate a fresh As-built for every selected project, fill configured dates, uncheck Current Set, Drawing Log, and Current Set Log when present, check every other Include option, verify all final checkbox states, wait for completion, and download ZIP files. Persist each outcome before the next project. When previous builds exist, click Generate a new As-built first; never reuse an old download.
 7. Preserve a final visible-browser verification pause. Automated mode attempts logout and closes its browser; Chrome session mode skips logout and disconnects while leaving Chrome open and signed in.
 
 ### Part B — Kahua import (in development)
@@ -38,6 +38,9 @@ CAPTCHA and OTP solving must remain manual in either workflow. Do not add CAPTCH
 ## Active repository layout
 
 - `src/main.ts`: application orchestration, browser lifecycle, project loop, cleanup, and exit status.
+- `src/export-selection.ts`: export CLI/environment validation, enabled-only skip/limit selection, and explicit failure retry matching against the current CSV.
+- `src/export-run.ts`: timestamped execution reports, per-project persistence, retry-source validation, parent/root run links, and retry command formatting.
+- `src/export-batch.test.ts`: temporary-fixture batch selection, report persistence, and retry-chain tests.
 - `src/auth.ts`: PlanGrid/Autodesk login, manual verification pause, authenticated-projects validation, and logout.
 - `src/chrome-session.ts`: CDP attachment to existing Chrome using debugging connection metadata or an explicit endpoint; does not launch Chrome or read credentials/cookies.
 - `src/project-exporter.ts`: project search, project navigation, As-built export handling, progress polling, and ZIP download.
@@ -60,6 +63,7 @@ CAPTCHA and OTP solving must remain manual in either workflow. Do not add CAPTCH
 - `sync_ups/`: default local sync staging output; preserve `.gitkeep` and do not commit copied contents.
 - `drawings/`: default local staging for other project contents; preserve `.gitkeep` and do not commit copied contents.
 - `logs/`: generated run logs; preserve `.gitkeep` and do not treat logs as source code.
+- `runs/`: generated export execution reports; ignored by Git and independent of `DOWNLOAD_DIR`.
 
 ## Commands and validation
 
@@ -72,6 +76,29 @@ npm run export:chrome
 ```
 
 Sign in to PlanGrid in regular Chrome, paste `chrome://inspect/#remote-debugging` into Chrome's address bar, and enable remote debugging before running. Accept Chrome's **Allow** prompt when shown, wait for the projects page and search box, then click **Resume ▶** in Playwright Inspector. Preserve the final Inspector pause and leave Chrome open and signed in after disconnecting.
+
+Export batching uses optional `.env` settings `BATCH_SKIP=0` and `BATCH_LIMIT=` (blank/unset means all remaining enabled projects). Command-line values override their respective defaults. For example, run enabled projects 1–50, then 51–100, separately:
+
+```bash
+npm run export:chrome -- --skip 0 --limit 50
+npm run export:chrome -- --skip 50 --limit 50
+```
+
+`--offset` is an alias for `--skip`. Filter to enabled projects before slicing; disabled rows consume no slots. A limit counts attempted projects including failures, not successes. Skip must be a non-negative safe integer; a specified limit must be a positive safe integer. Reject invalid, duplicate, conflicting, or unknown arguments before browser startup. Keep CSV order and enabled flags stable when advancing offsets. Never rewrite the CSV, flip flags, automatically advance offsets, or skip projects based on earlier successes.
+
+Explicit failure retries use a chosen report:
+
+```bash
+npm run export:chrome -- --retry-failed "runs/<run-id>/results.json"
+```
+
+Retry mode ignores both batch environment settings, including invalid values, and rejects explicit skip/offset/limit arguments. Validate the report format/version and unique identities; select only explicit FAILED records in report order. Match their unchanged `project_clean_name` against current enabled CSV projects and use current CSV details, preserving `project_name` exactly. Missing, renamed, or disabled clean names fail selection before browser startup rather than silently choosing another row or enabling it. Blank/nonunique UIDs and CSV row numbers are not retry identities. Each retry requests a fresh export, never a resumed build or transfer. Keep retries explicit and leave the source report unchanged. Use the newly generated report for a subsequent retry; older reports retain their original failed set.
+
+The same arguments work with `npm run export -- ...` and `npm run headless -- ...` under their existing login and cleanup rules. `npm run export:chrome -- --help` (also supported by the other export modes) lists arguments without opening a browser. All examples must remain compatible with macOS/Linux and Windows Command Prompt/PowerShell. Batch and retry controls apply only to exports; unzip, sync, drawings, and Part B retain their existing selection and consent rules.
+
+Every valid selection creates `runs/<run-id>/results.json` and `failed-projects.csv`, including empty selections and explicit retries. IDs contain a Windows-compatible UTC timestamp, run type, batch settings when applicable, and a uniqueness suffix. Reports record parentRunId for the chosen source run and rootRunId for the original batch, project snapshots, timestamps, selection settings, and counts. Startup logs also show IST. Save the initial pending selection before browser startup, IN_PROGRESS before each project, and final results before starting another project. Report writing failures stop execution before another export; publish JSON atomically and treat it as authoritative if CSV publication fails. The CSV lists only FAILED records and preserves exact project names through proper quoting. Do not store credentials, session data, or download URLs in reports, or use reports to persist resumable build/transfer state.
+
+COMPLETED means project processing finished, even when individual projects failed; later browser/logout cleanup issues remain in the run log. Caught run-level failures mark the run ABORTED, keep completed outcomes, mark active projects INTERRUPTED, and leave untouched projects PENDING. A hard process termination may leave RUNNING/IN_PROGRESS on disk. Unfinished states are for manual review and must never be automatically included in `--retry-failed`. Empty selections create a completed empty report and exit successfully without a browser. Log report paths, parent/root IDs, selected counts/range, and the exact mode-appropriate retry command when failures exist. Run summaries count only selected projects; disabled and out-of-range entries are excluded, not fabricated outcomes.
 
 ### Extract downloaded ZIPs
 
@@ -135,7 +162,7 @@ npm run test:drawings
 npm run test:import
 ```
 
-The tests cover project CSV validation and exact name preservation, exact-name selection among similar search results, missing/duplicate exact-match failures, simulated fresh export requests and checkbox verification, projects-page reuse/readiness and failure recovery, download naming and transfer-status scheduling/cleanup, temporary ZIP extraction, both local copy workflows, and Part B local preparation. Transfer-status tests use a simulated clock rather than real waits. There is no automated test suite for the real Part A or Kahua browser flow. Do not launch a real login/export run unless requested or clearly part of the task. Do not run unzip or either copy command on real downloads merely to validate changes.
+The tests cover batch option validation/precedence, enabled-only offsets, report persistence and failure handling, explicit retry chains, unfinished states, source-report preservation, project CSV validation and exact name preservation, exact-name selection among similar search results, missing/duplicate exact-match failures, simulated fresh export requests and checkbox verification, projects-page reuse/readiness and failure recovery, download naming and transfer-status scheduling/cleanup, temporary ZIP extraction, both local copy workflows, and Part B local preparation. Transfer-status tests use a simulated clock rather than real waits. There is no automated test suite for the real Part A or Kahua browser flow. Do not launch a real login/export run unless requested or clearly part of the task. Do not run unzip or either copy command on real downloads merely to validate changes.
 
 ## Configuration and sensitive data
 
@@ -152,6 +179,8 @@ Shared optional configuration:
 - `DOWNLOAD_DIR` (defaults to `downloads`)
 - `SYNC_UP_DIR` (defaults to `sync_ups`; local Documents/Photos staging root, with relative paths resolved from the repository)
 - `DRAWINGS_DIR` (defaults to `drawings`; separate local staging root for everything except project-level Documents/Photos, with relative paths resolved from the repository)
+- `BATCH_SKIP` (export commands only; defaults to `0`, counting enabled projects before the selected range; CLI `--skip` or `--offset` overrides it)
+- `BATCH_LIMIT` (export commands only; unset/blank means all remaining enabled projects; CLI `--limit` overrides it; explicit retry mode ignores both batch settings)
 - `PLANGRID_CHROME_USER_DATA_DIR` (Chrome mode only; overrides the directory used to locate `DevToolsActivePort`)
 - `PLANGRID_CDP_URL` (Chrome mode only; overrides automatic discovery with an existing CDP endpoint)
 
@@ -184,7 +213,7 @@ Keep selectors in `utils/constants.ts`; keep authentication state checks in `src
 
 The script opens a new export tab in the existing default browser context and navigates to the projects page; an existing PlanGrid tab does not need to remain open. `verifyAttachedChromeSession` in `src/auth.ts` pauses for Resume, then validates the projects URL and visible search field before exports. Preserve this verification and the final visible pause. Skip automatic logout both after exports and during failure cleanup. Closing the CDP connection must disconnect without closing the user's Chrome or its tabs.
 
-After successful authentication, the first enabled project may reuse the current projects landing page instead of navigating to it again. Reuse is permitted only for the matching PlanGrid origin and landing-page path (including its optional trailing slash/query); a project-detail page is not the landing page. Disabled rows do not consume first-project reuse. Always retain page-readiness, visible-search, settle, and matching-row waits, even when reusing the page. Subsequent enabled projects must navigate to the landing page once, including after a previous project fails or is skipped.
+After successful authentication, the first selected enabled project may reuse the current projects landing page instead of navigating to it again. Reuse is permitted only for the matching PlanGrid origin and landing-page path (including its optional trailing slash/query); a project-detail page is not the landing page. Disabled and out-of-range rows do not consume first-project reuse. Always retain page-readiness, visible-search, settle, and matching-row waits, even when reusing the page. Subsequent selected projects must navigate to the landing page once, including after a previous project fails or is skipped.
 
 For hosted execution, Chrome and the script should run together in a persistent interactive desktop session. Authentication must be established on that machine, and session expiration requires user reauthentication. The current connection approval and Inspector pauses mean this mode is not an unattended scheduled workflow. Never read or copy browser cookies or credentials to establish the connection.
 
@@ -194,11 +223,11 @@ Keep projects-page timings separate from authentication and Kahua timings. Proje
 
 Use the CSV's unchanged `project_name` for both search entry and exact selection against the project link's `title` attribute. Preserve capitalization and every whitespace character, including leading/trailing spaces; never trim or normalize this field. Multiple search results alone are not ambiguous: open the one row whose full name matches exactly. If no exact match becomes visible within 30 seconds, or multiple rows have the exact same name, return FAILED without clicking a row. Keep the final click strict so a newly appearing duplicate cannot select an arbitrary row. Do not fall back to partial names, `project_clean_name`, or `project_uid` for selection.
 
-Per-project navigation/readiness, project-selection, and export errors must return a FAILED result without throwing out of the project loop. Disabled CSV rows remain SKIPPED. Log project name, CSV position/total, outcome, and continuation after a failed/skipped enabled project when another CSV entry remains. The next enabled project navigates afresh and repeats readiness checks. Process all remaining entries before returning a nonzero exit status for any FAILED project. Authentication/startup verification failures still stop the run before project processing. Do not automatically retry whole exports and risk requesting duplicate builds.
+Per-project navigation/readiness, project-selection, and export errors must return a FAILED result without throwing out of the project loop. Export selection excludes disabled and out-of-range CSV rows from run counts; direct calls to exportProject still return SKIPPED for disabled projects. Log project name, run position/total, CSV position/total, enabled-list position, and outcome. Log continuation after a failed/skipped selected project when another selected entry remains. The next selected project navigates afresh and repeats readiness checks. Process all remaining selected entries before returning a nonzero exit status for any FAILED project. Authentication/startup verification failures still stop the run before project processing. Do not automatically retry whole exports and risk requesting duplicate builds.
 
 Log whether the As-built form/table is visible and whether the request is first-time or recurring. Use Option B: generate immediately without waiting for previous processing builds. On recurring requests, snapshot the build IDs from every table row before opening Generate a new As-built, including IDs in hidden download links on processing rows. First-time forms start with an empty previous-ID set. Both form paths must fill configured dates (leave platform defaults when blank), uncheck Current Set (`inc_conformed`), Drawing Log (`inc_drawing_log`), and Current Set Log (`inc_curr_set_log`) when present, and check every other Include checkbox. Verify all final states before clicking Zip File and log one confirmation with the checked and unchecked options. Fail clearly if the form has no Include checkboxes or any required state cannot be set or verified.
 
-After submission, compare all current build IDs with the snapshot. Zero new IDs means wait without an overall generation timeout; never download an old build or repeat submission. Exactly one new ID permits tracking it. Multiple unseen IDs during identification must immediately fail that project without attempting a download, even if one appears first. Missing, unreadable, mismatched, or duplicated identifiers must also fail safely. Validate build links against the captured PlanGrid project page, derive the build ID from the asbuilts path, and keep selectors in utils/constants.ts. Once identified, bind progress, status, and the download click to that ID rather than the top row. Later unrelated rows must not change the selected identity. Require both 100% and the tracked build's visible Download link. Keep identifiers in memory only; restarting processes the enabled CSV entries normally, without checkpoints, partial-download resumption, or automatic skipping.
+After submission, compare all current build IDs with the snapshot. Zero new IDs means wait without an overall generation timeout; never download an old build or repeat submission. Exactly one new ID permits tracking it. Multiple unseen IDs during identification must immediately fail that project without attempting a download, even if one appears first. Missing, unreadable, mismatched, or duplicated identifiers must also fail safely. Validate build links against the captured PlanGrid project page, derive the build ID from the asbuilts path, and keep selectors in utils/constants.ts. Once identified, bind progress, status, and the download click to that ID rather than the top row. Later unrelated rows must not change the selected identity. Require both 100% and the tracked build's visible Download link. Keep build identifiers in memory only; reports select projects for explicit fresh retries, without build checkpoints, partial-download resumption, or automatic skipping.
 
 Keep failure detection simple and deterministic. Only the tracked build's visible status exactly matching Failed, Error, Cancelled, or Canceled (case-insensitive, allowing one trailing period/exclamation mark) is an explicit terminal failure. Use innerText so hidden Processing text in completed rows is excluded. Unknown/blank status text alone is not terminal: warn and continue polling until the 100%/visible-Download pair is met, without inferring failure from unfamiliar text. Missing/duplicated tracked rows or unreadable controls fail through normal control-readiness checks; report the affected project and continue the CSV loop. Older failed/cancelled/processing builds do not block a new request. Do not add overall generation/transfer deadlines, progress-stall heuristics, automatic submission retries, or unverified failure-state guesses.
 
@@ -236,7 +265,7 @@ Sync preparation retains merge behavior. Its overwrite preview must prominently 
 
 Part B reads `input/version_sets.csv` and currently prepares only the project pinned in `src/import/config.ts`. Preparation output belongs under `<DOWNLOAD_DIR>/import-preparation/`; Kahua upload output does not exist yet because upload automation is still in development.
 
-Generated exports and Part B preparation files belong under the configured download directory; local Documents/Photos staging belongs under `SYNC_UP_DIR`, and the other copied project contents belong under `DRAWINGS_DIR`. Run logs are written under `logs/` with UTC timestamps. Avoid committing generated downloads, either staging folder's contents, logs, browser profiles, or local `.env` files.
+Generated exports and Part B preparation files belong under the configured download directory; local Documents/Photos staging belongs under `SYNC_UP_DIR`, and the other copied project contents belong under `DRAWINGS_DIR`. Run logs are written under `logs/` with UTC timestamps. Export execution reports belong under repository-root `runs/`, independently of `DOWNLOAD_DIR`. Avoid committing generated reports, downloads, either staging folder's contents, logs, browser profiles, or local `.env` files.
 
 ## Change expectations
 

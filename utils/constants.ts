@@ -12,6 +12,8 @@ export const ENV_KEYS = {
   downloadDir: 'DOWNLOAD_DIR',
   syncUpDir: 'SYNC_UP_DIR',
   drawingsDir: 'DRAWINGS_DIR',
+  batchSkip: 'BATCH_SKIP',
+  batchLimit: 'BATCH_LIMIT',
   planGridCdpUrl: 'PLANGRID_CDP_URL',
   chromeUserDataDir: 'PLANGRID_CHROME_USER_DATA_DIR',
   kahuaUsername: 'KAHUA_USERNAME',
