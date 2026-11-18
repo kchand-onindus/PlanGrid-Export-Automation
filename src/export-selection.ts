@@ -93,7 +93,7 @@ export function selectExportProjects(
   const entries = retry.failedCleanNames.map((cleanName) => {
     const entry = byCleanName.get(cleanName);
     if (!entry) {
-      throw new Error(`Failed project "${cleanName}" is missing or disabled in input/projects.csv; retry selection stopped before browser startup`);
+      throw new Error(`Failed project "${cleanName}" is missing or disabled in the configured projects CSV; retry selection stopped before browser startup`);
     }
     // The current CSV remains authoritative, allowing corrections to names and dates before retrying.
     return entry;
@@ -123,6 +123,8 @@ Examples:
 The original --skip/--offset, --limit, --retry-failed, and --help flags still work.
 For those flag forms, use npm's separator: npm run export:chrome -- --skip 0 --limit 50
 
+Set PROJECTS_CSV in .env to choose the input file (default: input/projects.csv).
+Relative paths resolve from this repository. Unzip and local staging use the same CSV.
 Batch defaults: BATCH_SKIP=0; BATCH_LIMIT unset/blank means all remaining.
 Command-line values override .env. Retry mode ignores both batch environment
 settings and cannot be combined with explicit skip/offset/limit arguments.

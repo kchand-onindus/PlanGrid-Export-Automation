@@ -18,7 +18,7 @@ The working export application uses Playwright to:
 2. In automated mode, open PlanGrid, hand off authentication to Autodesk, and complete the email/password steps.
 3. Pause for manual Autodesk CAPTCHA, OTP, or other verification when required.
 4. Verify the authenticated PlanGrid projects page before continuing.
-5. Validate `input/projects.csv`, select enabled projects using global skip/limit settings or explicit failed-report retry selection, and save a timestamped run report before browser startup.
+5. Validate the CSV configured by `PROJECTS_CSV` (default: `input/projects.csv`), select enabled projects using global skip/limit settings or explicit failed-report retry selection, and save a timestamped run report before browser startup.
 6. Generate a fresh As-built for every selected project, fill configured dates, uncheck Current Set, Drawing Log, and Current Set Log when present, check every other Include option, verify all final checkbox states, wait for completion, and download ZIP files. Persist each outcome before the next project. When previous builds exist, click Generate a new As-built first; never reuse an old download.
 7. Visible automated-login mode preserves its final verification pause, attempts logout, and closes its browser. Chrome-session mode has no initial or final Inspector pause: it verifies authentication automatically, skips logout, and disconnects while leaving Chrome open and signed in.
 
@@ -58,7 +58,7 @@ CAPTCHA and OTP solving must remain manual in either workflow. Do not add CAPTCH
 - `utils/constants.ts`: URLs, environment variable names, timeouts, and DOM selectors.
 - `utils/env.ts`: repository `.env` loading and required credential validation.
 - `playwright.config.ts`: browser visibility and Playwright timeout settings.
-- `input/projects.csv`: project input data.
+- `input/projects.csv`: default project input path; `PROJECTS_CSV` can select a list in a subfolder or an absolute location.
 - `input/version_sets.csv`: Part B drawing-version metadata and upload ordering.
 - `downloads/`: downloaded ZIP output; preserve `.gitkeep` and do not commit generated exports.
 - `sync_ups/`: default local sync staging output; preserve `.gitkeep` and do not commit copied contents.
@@ -177,6 +177,7 @@ Document `DOWNLOAD_DIR`, `SYNC_UP_DIR`, and `DRAWINGS_DIR` together in the READM
 Shared optional configuration:
 
 - `PLATFORM_URL` (defaults to `https://app.plangrid.com`; initial navigation for automated login only)
+- `PROJECTS_CSV` (unset/blank defaults to `input/projects.csv`; selects one project CSV for all export modes, unzip, sync, and drawings; relative paths resolve from the repository, and absolute paths are supported)
 - `DOWNLOAD_DIR` (defaults to `downloads`)
 - `SYNC_UP_DIR` (defaults to `sync_ups`; local Documents/Photos staging root, with relative paths resolved from the repository)
 - `DRAWINGS_DIR` (defaults to `drawings`; separate local staging root for everything except project-level Documents/Photos, with relative paths resolved from the repository)
@@ -244,7 +245,7 @@ After navigation commits, readiness must be determined from the Uno canvas and s
 
 ## Input and output conventions
 
-`input/projects.csv` recognizes `project_uid,project_name,project_clean_name,enabled,start_date,end_date,excel_name`. The first four columns are required; UID values, dates, and optional Excel metadata may be blank. Preserve a nonempty excel_name exactly as decoded in the optional Project.excelName field and carry it into run snapshots and failure CSVs. It is display metadata only, never a search term, path, identity, or export setting. Column order may vary. Extra columns such as action, sheets_count, and future metadata are retained with original header order and raw decoded values for reports but ignored by automation settings. Maintain separate validated settings and sourceCsv reporting data; readProjects must keep its existing plain Project projection for local workflows. Header names must be unique, and every row must contain the same number of fields as the header, including blank fields. Quote fields containing commas; CSV quotes are syntax and are not part of the decoded name. `enabled` must be `true` or `false`; optional dates must use `YYYY-MM-DD`.
+The CSV selected by `PROJECTS_CSV` recognizes `project_uid,project_name,project_clean_name,enabled,start_date,end_date,excel_name`. The first four columns are required; UID values, dates, and optional Excel metadata may be blank. Preserve a nonempty excel_name exactly as decoded in the optional Project.excelName field and carry it into run snapshots and failure CSVs. It is display metadata only, never a search term, path, identity, or export setting. Column order may vary. Extra columns such as action, sheets_count, and future metadata are retained with original header order and raw decoded values for reports but ignored by automation settings. Maintain separate validated settings and sourceCsv reporting data; readProjects must keep its existing plain Project projection for local workflows. Header names must be unique, and every row must contain the same number of fields as the header, including blank fields. Quote fields containing commas; CSV quotes are syntax and are not part of the decoded name. `enabled` must be `true` or `false`; optional dates must use `YYYY-MM-DD`.
 
 Treat `project_name` as the source of truth: preserve its decoded CSV value exactly for PlanGrid search, exact selection, and logging. Reject empty or whitespace-only names, but never trim or normalize valid names. Continue trimming the other configuration fields. `project_clean_name` is the separately supplied, required, validated folder/file base name used directly for `<DOWNLOAD_DIR>/<project_clean_name>/<project_clean_name>.zip` and by unzip, sync, and drawings staging; do not derive it from `project_name`, automatically sanitize it, or use the platform-suggested ZIP filename. Reject unsafe names and duplicate clean names among enabled projects before browser startup. Workflows read the project CSV without rewriting it or automatically changing `enabled` after success or failure.
 

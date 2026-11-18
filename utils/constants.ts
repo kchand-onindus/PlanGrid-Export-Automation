@@ -9,6 +9,7 @@ export const ENV_KEYS = {
   email: 'PLANGRID_EMAIL',
   password: 'PLANGRID_PASSWORD',
   platformUrl: 'PLATFORM_URL',
+  projectsCsv: 'PROJECTS_CSV',
   downloadDir: 'DOWNLOAD_DIR',
   syncUpDir: 'SYNC_UP_DIR',
   drawingsDir: 'DRAWINGS_DIR',

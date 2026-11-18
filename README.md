@@ -32,6 +32,18 @@ Part A is the working export workflow. It logs into PlanGrid, selects enabled pr
 
 Copy `.env.example` to `.env` in the repository folder if you do not already have one. When updating an existing installation, add any missing settings from `.env.example` while preserving your credentials and custom paths.
 
+Choose the project list with `PROJECTS_CSV` in `.env`, including the filename. For example:
+
+```env
+PROJECTS_CSV=input/active_migrate/projects.csv
+```
+
+To use the other list, change that line to `PROJECTS_CSV=input/migrate_final_estimate_paid/projects.csv`. Then run the usual `npm run export:chrome` command. Only the configured CSV is read; lists are not combined or selected automatically. The resolved `inputFile` is printed at startup and recorded in export reports. A missing or invalid CSV stops exports before connecting to Chrome.
+
+An unset or blank `PROJECTS_CSV` defaults to `input/projects.csv`. Relative paths resolve from the repository folder; absolute paths are also supported, such as `D:/PlanGrid/input/active_migrate/projects.csv` on Windows or `/Users/kunalchand/Desktop/project-lists/active_migrate/projects.csv` on macOS. Quote values containing spaces in `.env`.
+
+This setting is shared by `export:chrome`, `export`, `headless`, `unzip`, `sync:prepare`, and `drawing:prepare`. Keep the same CSV configured through export, extraction, local staging, and any failure retries. Keep the chosen list stable when advancing batch offsets. Changing `PROJECTS_CSV` does not change download or staging locations; configure the directories below separately. Part B continues to use `input/version_sets.csv`.
+
 For the main Chrome → unzip → sync workflow and the separate drawings copy, configure these directories:
 
 ```env
@@ -83,7 +95,7 @@ Passwords are never written to the logs. `PLANGRID_EMAIL` and `PLANGRID_PASSWORD
 
 ### Prepare the project input
 
-Update `input/projects.csv` with one project per row:
+Update the CSV selected by `PROJECTS_CSV` (default: `input/projects.csv`) with one project per row:
 
 ```csv
 project_uid,project_name,project_clean_name,enabled,start_date,end_date
@@ -113,7 +125,7 @@ Keep the intended export pool enabled and use batch controls to choose the next 
 
 ### Run commands in order
 
-Complete the shared setup, configure `.env`, and prepare `input/projects.csv` first. Run the following steps separately from the repository folder, continuing only after the previous step succeeds. All commands work on **Windows Command Prompt, Windows PowerShell, macOS, and Linux**.
+Complete the shared setup, configure `.env`, and prepare the CSV selected by `PROJECTS_CSV` first. Run the following steps separately from the repository folder, continuing only after the previous step succeeds. All commands work on **Windows Command Prompt, Windows PowerShell, macOS, and Linux**.
 
 **Keep `results.json` and `failed-projects.csv` closed while any export command is running.** Excel, editors, and file-preview panes can lock files, especially on Windows, preventing the script from updating its reports. Follow progress in the terminal or the run log under `logs/`, and open reports after the command exits. See [report file access and recovery](#report-file-access-and-recovery) if a save fails.
 
@@ -329,7 +341,7 @@ npm run unzip
 
 **Extract after downloading.** Run from the repository folder on **Windows Command Prompt, Windows PowerShell, macOS, or Linux**.
 
-Install dependencies with `npm install` first. This local step does not require a browser, Playwright Chromium, or login credentials. It reads the same `input/projects.csv` and uses the same `DOWNLOAD_DIR` configuration (default: `downloads`).
+Install dependencies with `npm install` first. This local step does not require a browser, Playwright Chromium, or login credentials. It reads the same CSV selected by `PROJECTS_CSV` and uses the same `DOWNLOAD_DIR` configuration (default: `downloads`).
 
 For each enabled row, it opens `<DOWNLOAD_DIR>/<project_clean_name>/<project_clean_name>.zip` and creates a parent folder named `project_clean_name` next to that ZIP. All contents are extracted into `<DOWNLOAD_DIR>/<project_clean_name>/<project_clean_name>/`. If the ZIP has a single project wrapper containing Documents, Photos, or Drawings, extraction omits that wrapper and places its contents directly in the clean-name parent. All deeper folder paths and filenames are preserved, and the source ZIP is retained.
 
@@ -370,7 +382,7 @@ npm run sync:prepare
 
 **Copy after successful extraction.** Run from the repository folder on **Windows Command Prompt, Windows PowerShell, macOS, or Linux**.
 
-This command copies local files only. It does not unzip archives, open a browser, upload files, or connect to a sync service. Install dependencies with `npm install` and use the same `input/projects.csv` and `DOWNLOAD_DIR` as the export/unzip steps. The earlier filename-conflict limitation still applies to extraction; this command does not resolve or retry it.
+This command copies local files only. It does not unzip archives, open a browser, upload files, or connect to a sync service. Install dependencies with `npm install` and use the same `PROJECTS_CSV` and `DOWNLOAD_DIR` as the export/unzip steps. The earlier filename-conflict limitation still applies to extraction; this command does not resolve or retry it.
 
 For each enabled project, it opens `<DOWNLOAD_DIR>/<project_clean_name>/<project_clean_name>/` and looks for `Documents` and `Photos` directly in that folder, matching the refreshed unzip layout. For older extractions, if neither is directly present, it also checks the immediate child directories to support a project wrapper included in the ZIP. If more than one wrapper contains those folders, it reports an ambiguous source instead of merging them. It does not search arbitrary nested drawing trees.
 
@@ -421,7 +433,7 @@ Logs are written to the terminal and `logs/sync-preparation-<timestamp>.log`. Th
 
 ### Part A output
 
-- Input data: `input/projects.csv`
+- Input data: `PROJECTS_CSV` (default: `input/projects.csv`)
 - Downloaded ZIP files: `<DOWNLOAD_DIR>/<project_clean_name>/<project_clean_name>.zip`
 - Run logs: `logs/export-<timestamp>.log`
 - Export execution reports: `runs/<run-id>/results.json` and `runs/<run-id>/failed-projects.csv` (at the repository root, independent of `DOWNLOAD_DIR`)
@@ -438,7 +450,7 @@ These commands cover the separate drawings copy, alternative login modes, valida
 npm run drawing:prepare
 ```
 
-Run after successful `npm run unzip`, from the repository folder on **Windows Command Prompt, Windows PowerShell, macOS, or Linux**. Install dependencies with `npm install` first. This is a separate local copy command using the same `input/projects.csv` and `DOWNLOAD_DIR`; it does not open a browser or upload anything. It can run independently of `sync:prepare` once extraction succeeds.
+Run after successful `npm run unzip`, from the repository folder on **Windows Command Prompt, Windows PowerShell, macOS, or Linux**. Install dependencies with `npm install` first. This is a separate local copy command using the same `PROJECTS_CSV` and `DOWNLOAD_DIR`; it does not open a browser or upload anything. It can run independently of `sync:prepare` once extraction succeeds.
 
 For each enabled project, it reads `<DOWNLOAD_DIR>/<project_clean_name>/<project_clean_name>/` and fully refreshes `<DRAWINGS_DIR>/<project_clean_name>/` with **everything except the source project's top-level `Documents` and `Photos` entries**. It creates a missing destination project folder. For an existing destination, **all its previous contents are removed**, including destination-only files/folders and stale Documents/Photos. The result contains only the latest eligible source contents: Drawings, all other folders, loose files such as export reports, nested contents, and empty folders. Folder hierarchy and internal names are preserved; nested folders named Documents or Photos inside an included source tree are retained. Sources and other destination projects remain unchanged.
 
@@ -513,7 +525,7 @@ The npm commands set `HEADLESS` inside Node.js before loading the application, s
 
 ### Automated export flow
 
-Before browser startup, `npm run export` validates `input/projects.csv`, selects the enabled range or explicit report failures, and creates a timestamped run report. For a nonempty selection, it opens the configured `PLATFORM_URL` in a visible browser. The flow is:
+Before browser startup, `npm run export` validates the CSV selected by `PROJECTS_CSV`, selects the enabled range or explicit report failures, and creates a timestamped run report. For a nonempty selection, it opens the configured `PLATFORM_URL` in a visible browser. The flow is:
 
 1. PlanGrid opens and the email address is submitted.
 2. The browser moves to Autodesk, where the email address is filled and submitted again.

@@ -11,7 +11,7 @@ const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 
 export const paths = {
   projectRoot,
-  inputFile: path.join(projectRoot, 'input', 'projects.csv'),
+  inputFile: path.resolve(projectRoot, process.env[ENV_KEYS.projectsCsv]?.trim() || path.join('input', 'projects.csv')),
   downloadRoot: path.isAbsolute(process.env[ENV_KEYS.downloadDir] ?? '')
     ? process.env[ENV_KEYS.downloadDir]!
     : path.resolve(projectRoot, process.env[ENV_KEYS.downloadDir] ?? 'downloads'),
