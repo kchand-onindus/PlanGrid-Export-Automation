@@ -442,7 +442,24 @@ For example, `project_clean_name=Grainger_101410_01_ROW_Plans` produces `downloa
 
 ## Miscellaneous
 
-These commands cover the separate drawings copy, alternative login modes, validation, and the Part B workflow that is still in development. Use the three commands above for the regular download → unzip → local sync preparation workflow.
+These commands cover the separate drawings copy, alternative login modes, validation, and the Kahua import and PlanGrid admin access workflows in development. Use the three commands above for the regular download → unzip → local sync preparation workflow.
+
+### Grant PlanGrid admin access
+
+```bash
+npm run grant:admin
+```
+
+Use the existing Chrome setup from Step 1. Keep Chrome signed in to PlanGrid, enable remote debugging, and accept Chrome's **Allow** prompt if shown. The command verifies the PlanGrid projects page and processes every row with `enabled=true` in CSV order. To test a few projects, mark just those rows `true` and set the rest to `false` before running the command.
+
+The input is `input/grant_admin_access_projects.csv`. Each row uses `enterprise_project_url` for the Team page and `user_email_id` for the recipient. If the team is empty or the search confirms zero exact email matches, the script clears the search and opens **Add Team Members**. It verifies the recipient and **Admin** role, submits the invitation automatically in the signed-in Chrome session, reads PlanGrid's confirmation, clicks **Done**, and continues to the next selected project.
+
+After processing the selected projects, the command returns the Chrome tab to the organization Users page and disconnects. The final summary lists each project outcome first, followed by the totals. Logs are written to `logs/grant-admin-access-*.log`.
+
+- `SUCCESS` means the Team table showed the new member with the Admin role after submission.
+- `SKIPPED` means the exact email already had the Admin role.
+- `IN_PROGRESS` means PlanGrid displayed a blank confirmation after submission.
+- `ERROR` includes page or control failures, duplicate exact matches, an existing non-Admin member, and a grant the script could not verify.
 
 ### Prepare Drawings and other project contents
 

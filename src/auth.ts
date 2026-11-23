@@ -16,7 +16,7 @@ export type LoginResult =
   | 'AUTODESK_HANDOFF'
   | 'PASSWORD_FLOW';
 
-async function waitForAuthenticatedProjects(page: Page, timeoutMs: number): Promise<void> {
+export async function waitForAuthenticatedProjects(page: Page, timeoutMs: number): Promise<void> {
   const projectsUrl = new URL(URLS.projects);
   const isProjectsUrl = (url: URL): boolean =>
     url.origin === projectsUrl.origin &&

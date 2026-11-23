@@ -1,6 +1,7 @@
 export const URLS = {
   planGridLanding: 'https://app.plangrid.com',
   projects: 'https://app.plangrid.com/projects',
+  planGridOrganizationUsers: 'https://app.plangrid.com/enterprise/organizations/9c85eaf0-0e11-4e8a-91fb-a6b7dcb7a88e/users',
   autodeskSignIn: 'https://signin.autodesk.com',
   kahuaLanding: 'https://devproductionlaunch.kahua.com/',
 } as const;
@@ -67,6 +68,25 @@ export const PROJECT_SELECTORS = {
   progress: '.abProgress',
   status: '.abDown',
   downloadLink: 'a.asbuilt-download',
+} as const;
+
+export const PROJECT_USER_SELECTORS = {
+  searchInput: 'input[data-qa="ProjectUsers.search"]',
+  table: '[data-qa="ProjectUsers.table"]',
+  row: '[data-qa^="ProjectUsers.row "]',
+  emailCell: '[data-qa="ProjectUsers.email"]',
+  roleCell: '[data-qa="ProjectUsers.role"]',
+  noMatches: '[data-qa="ProjectUsers.noMatches"]',
+  footer: '[class*="TableFooter-module_tableFooter__"]',
+  addTeamMembers: 'button[data-qa="ProjectUsers.add"]',
+  addModal: '[data-qa="ProjectUsers.addModal"]',
+  multiEmailField: '[data-component="MultiEmailField"]',
+  inviteEmailInput: 'input[placeholder="Enter or paste comma-separated values"]',
+  adminRadio: 'input[type="radio"][data-component="RolesRadioGroup.radio Admin"]',
+  submitInvite: 'button[data-qa="ProjectUsers.addModal.add"]',
+  confirmationModal: '[class*="Modal-module_modal__"]:has(button[data-qa="ProjectUsers.addModal.done"])',
+  confirmationBody: '[class*="Modal-module_body__"]',
+  confirmationDone: 'button[data-qa="ProjectUsers.addModal.done"]',
 } as const;
 
 export const AS_BUILT_EXCLUDED_CHECKBOX_NAMES: readonly string[] = [

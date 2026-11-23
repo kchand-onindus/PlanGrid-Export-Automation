@@ -15,6 +15,7 @@
     "headless": "tsx src/run-export.ts --headless",
     "import:prepare": "tsx src/import/main.ts",
     "kahua": "tsx src/kahua/main.ts",
+    "grant:admin": "tsx src/admin-access/main.ts",
     "test:export": "tsx --test src/csv.test.ts src/auth.test.ts src/project-exporter.test.ts src/export-batch.test.ts",
     "test:unzip": "tsx --test src/unzip.test.ts",
     "test:sync": "tsx --test src/sync/preparation.test.ts",
