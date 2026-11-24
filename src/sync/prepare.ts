@@ -1,7 +1,8 @@
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { readProjects } from '../csv.js';
-import type { Logger } from '../logger.js';
+import type { Logger, LogContext } from '../logger.js';
 import type { Project } from '../types.js';
 import type { LocalProjectResult } from '../local-results.js';
 import { refreshDrawingDestination } from '../drawings/refresh.js';
@@ -9,13 +10,29 @@ import { refreshDrawingDestination } from '../drawings/refresh.js';
 const folderNames = ['Documents', 'Photos'] as const;
 interface SourceEntry { name: string; source: string }
 type CopyMode = 'sync' | 'drawings';
-interface FileState { dev: number; ino: number; size: number; mtimeMs: number }
-interface CopyItem { source: string; destination: string; directory: boolean; previous?: FileState }
+interface TreeEntry {
+  relative: string;
+  directory: boolean;
+  dev: number;
+  ino: number;
+  size: number;
+  mtimeMs: number;
+  ctimeMs: number;
+}
+interface SyncFolder extends SourceEntry {
+  target: string;
+  previous: TreeEntry[];
+  incoming: TreeEntry[];
+}
 
-export interface OverwriteRequest {
+interface ProjectOverwritePreview {
   project: Project;
   destination: string;
   files: string[];
+  folders?: string[];
+}
+export interface OverwriteRequest extends ProjectOverwritePreview {
+  additionalProjects?: ProjectOverwritePreview[];
 }
 export type ConfirmOverwrite = (request: OverwriteRequest) => Promise<boolean>;
 
@@ -25,12 +42,6 @@ async function statIfPresent(file: string) {
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
     throw error;
-  }
-}
-
-async function requireDirectory(directory: string): Promise<void> {
-  if (!(await fs.lstat(directory)).isDirectory()) {
-    throw new Error(`Expected a directory, not a file or link: ${directory}`);
   }
 }
 
@@ -101,50 +112,153 @@ async function canonicalPath(file: string): Promise<string> {
   }
 }
 
-async function planCopy(source: string, destination: string, items: CopyItem[]): Promise<void> {
-  const sourceStat = await fs.lstat(source);
-  const directory = sourceStat.isDirectory();
-  if (!directory && !sourceStat.isFile()) throw new Error(`Links and special files cannot be copied: ${source}`);
-  const existing = await statIfPresent(destination);
-  if (existing && (directory ? !existing.isDirectory() : !existing.isFile())) {
-    throw new Error(`Copy destination has an incompatible file/directory type or link: ${destination}`);
-  }
-  items.push({ source, destination, directory, previous: !directory && existing ? {
-    dev: existing.dev, ino: existing.ino, size: existing.size, mtimeMs: existing.mtimeMs,
-  } : undefined });
-  if (directory) {
-    for (const name of await fs.readdir(source)) await planCopy(path.join(source, name), path.join(destination, name), items);
-  }
-}
-
-async function checkDestination(item: CopyItem): Promise<void> {
-  const current = await statIfPresent(item.destination);
-  if (item.directory) {
-    if (current && !current.isDirectory()) throw new Error(`Copy destination changed to a file or link: ${item.destination}`);
-  } else if (item.previous) {
-    if (!current?.isFile() || current.dev !== item.previous.dev || current.ino !== item.previous.ino
-        || current.size !== item.previous.size || current.mtimeMs !== item.previous.mtimeMs) {
-      throw new Error(`Existing destination file changed after the overwrite preview; rerun to review it: ${item.destination}`);
+async function readTree(root: string): Promise<TreeEntry[]> {
+  const entries: TreeEntry[] = [];
+  async function visit(relative: string): Promise<void> {
+    const file = path.join(root, relative);
+    const stat = await fs.lstat(file);
+    const directory = stat.isDirectory();
+    if (!directory && !stat.isFile()) throw new Error(`Links and special files cannot be copied: ${file}`);
+    entries.push({
+      relative, directory, dev: stat.dev, ino: stat.ino, size: stat.size,
+      mtimeMs: stat.mtimeMs, ctimeMs: stat.ctimeMs,
+    });
+    if (directory) {
+      for (const name of (await fs.readdir(file)).sort()) await visit(path.join(relative, name));
     }
-  } else if (current) {
-    throw new Error(`A new destination file appeared after the preview; rerun to review it: ${item.destination}`);
+  }
+  await visit('');
+  return entries;
+}
+
+async function copyTree(entries: TreeEntry[], source: string, destination: string): Promise<void> {
+  for (const entry of entries) {
+    const target = path.join(destination, entry.relative);
+    if (entry.directory) await fs.mkdir(target);
+    else await fs.copyFile(path.join(source, entry.relative), target, fs.constants.COPYFILE_EXCL);
   }
 }
 
-async function copyItem(item: CopyItem): Promise<void> {
-  if (!item.previous) {
-    await fs.copyFile(item.source, item.destination, fs.constants.COPYFILE_EXCL);
-    return;
+async function requireSameDirectory(directory: string, expected: { dev: number; ino: number }): Promise<void> {
+  const current = await fs.lstat(directory);
+  if (!current.isDirectory() || current.dev !== expected.dev || current.ino !== expected.ino) {
+    throw new Error(`Destination directory changed: ${directory}`);
   }
-  // Finish the incoming copy before replacing an approved destination file.
-  const temporary = await fs.mkdtemp(path.join(path.dirname(item.destination), '.sync-copy-'));
+}
+
+async function clearContents(directory: string, expected: { dev: number; ino: number }): Promise<void> {
+  await requireSameDirectory(directory, expected);
+  for (const name of await fs.readdir(directory)) {
+    await requireSameDirectory(directory, expected);
+    await fs.rm(path.join(directory, name), { recursive: true, force: true, maxRetries: 3 });
+  }
+}
+
+async function planSyncFolders(sources: SourceEntry[], destination: string): Promise<SyncFolder[]> {
+  const folders: SyncFolder[] = [];
+  for (const source of sources) {
+    const target = path.join(destination, source.name);
+    const previous = await statIfPresent(target) ? await readTree(target) : [];
+    const incoming = await readTree(source.source);
+    if ((previous.length && !previous[0].directory) || !incoming[0].directory) {
+      throw new Error(`Expected a Documents/Photos directory: ${target}`);
+    }
+    folders.push({ ...source, target, previous, incoming });
+  }
+
+  return folders;
+}
+
+function buildOverwritePreview(
+  project: Project, destination: string, folders: SyncFolder[],
+): ProjectOverwritePreview | undefined {
+  const replacing = folders.filter(({ previous }) => previous.length > 1);
+  if (!replacing.length) return undefined;
+  return {
+    project, destination,
+    folders: replacing.map(({ name }) => name),
+    files: replacing.flatMap(({ target, previous }) =>
+      previous.slice(1).map(({ relative }) => path.join(target, relative))),
+  };
+}
+
+async function refreshSyncFolders(
+  folders: SyncFolder[],
+  destination: string,
+  parent: { dev: number; ino: number },
+  logger: Logger,
+  context: LogContext,
+): Promise<number> {
+  async function checkDestination({ target, previous }: SyncFolder): Promise<void> {
+    await requireSameDirectory(destination, parent);
+    const current = await statIfPresent(target) ? await readTree(target) : [];
+    if (JSON.stringify(current) !== JSON.stringify(previous)) {
+      throw new Error(`Destination contents changed after the replacement preview; rerun to review them: ${target}`);
+    }
+  }
+
+  for (const folder of folders) await checkDestination(folder);
+
+  const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'plangrid-sync-'));
+  const staged = path.join(temporary, 'incoming');
+  const backup = path.join(temporary, 'backup');
+  const started: { folder: SyncFolder; directory: { dev: number; ino: number } }[] = [];
+  let keepBackup = false;
   try {
-    const staged = path.join(temporary, 'incoming');
-    await fs.copyFile(item.source, staged, fs.constants.COPYFILE_EXCL);
-    await checkDestination(item);
-    await fs.rename(staged, item.destination);
+    await fs.mkdir(staged);
+    await fs.mkdir(backup);
+    for (const folder of folders) {
+      if (JSON.stringify(await readTree(folder.source)) !== JSON.stringify(folder.incoming)) {
+        throw new Error(`Extracted source changed during sync preparation; rerun to review it: ${folder.source}`);
+      }
+      await copyTree(folder.incoming, folder.source, path.join(staged, folder.name));
+      if (folder.previous.length) await copyTree(folder.previous, folder.target, path.join(backup, folder.name));
+    }
+
+    // Verify both folders before clearing either, including destination-only entries.
+    for (const folder of folders) await checkDestination(folder);
+
+    try {
+      for (const folder of folders) {
+        await checkDestination(folder);
+        if (!folder.previous.length) await fs.mkdir(folder.target);
+        const directory = folder.previous[0] ?? await fs.lstat(folder.target);
+        started.push({ folder, directory });
+        await clearContents(folder.target, directory);
+        await copyTree(folder.incoming.slice(1), path.join(staged, folder.name), folder.target);
+      }
+    } catch (error) {
+      for (const { folder, directory } of started.reverse()) {
+        try {
+          await requireSameDirectory(destination, parent);
+          await clearContents(folder.target, directory);
+          if (folder.previous.length) {
+            await copyTree(folder.previous.slice(1), path.join(backup, folder.name), folder.target);
+          } else {
+            await fs.rmdir(folder.target);
+          }
+        } catch (restoreError) {
+          keepBackup = true;
+          logger.error('Could not restore sync folder contents', {
+            ...context, folder: folder.target, error: restoreError instanceof Error ? restoreError.message : String(restoreError),
+          });
+        }
+      }
+      if (keepBackup) throw new Error(`Sync refresh and restoration failed; recovery backup retained at ${backup}`, { cause: error });
+      throw error;
+    }
+
+    return folders.reduce((count, folder) => count + folder.incoming.filter(({ directory }) => !directory).length, 0);
   } finally {
-    await fs.rm(temporary, { recursive: true, force: true });
+    if (!keepBackup) {
+      try {
+        await fs.rm(temporary, { recursive: true, force: true, maxRetries: 3 });
+      } catch (error) {
+        logger.error('Could not remove temporary sync directory', {
+          ...context, temporary, error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
   }
 }
 
@@ -178,7 +292,16 @@ async function prepareLocalCopies(
   const description = mode === 'sync' ? 'Documents/Photos' : 'contents except Documents/Photos';
   const noSources = mode === 'sync' ? 'No Documents or Photos folders found' : 'No contents other than Documents or Photos found';
   const projects = await readProjects(inputFile);
-  const results: LocalProjectResult[] = [];
+  const results = new Map<Project, LocalProjectResult>();
+  const syncPlans: {
+    project: Project;
+    destination: string;
+    parent: { dev: number; ino: number };
+    folders: SyncFolder[];
+    preview: ProjectOverwritePreview | undefined;
+    context: LogContext;
+    startedAt: number;
+  }[] = [];
   for (const project of projects) {
     const startedAt = Date.now();
     const projectDirectory = path.resolve(downloadRoot, project.projectCleanName);
@@ -190,7 +313,7 @@ async function prepareLocalCopies(
     };
     if (!project.enabled) {
       logger.info('Skipping disabled project', { ...context, skipReason: 'DISABLED' });
-      results.push({ project, status: 'SKIPPED', skipReason: 'DISABLED', message: 'Project is disabled', durationMs: 0 });
+      results.set(project, { project, status: 'SKIPPED', skipReason: 'DISABLED', message: 'Project is disabled', durationMs: 0 });
       continue;
     }
     try {
@@ -205,14 +328,14 @@ async function prepareLocalCopies(
         logger.warn('Project skipped; extracted source is missing', {
           ...context, skipReason: 'MISSING_EXTRACTION', missingSource,
         });
-        results.push({ project, status: 'SKIPPED', skipReason: 'MISSING_EXTRACTION', message, durationMs: Date.now() - startedAt });
+        results.set(project, { project, status: 'SKIPPED', skipReason: 'MISSING_EXTRACTION', message, durationMs: Date.now() - startedAt });
         continue;
       }
       const sources = await (mode === 'sync' ? findSourceFolders(extractionRoot) : findDrawingSources(extractionRoot));
       if (!sources.length) {
         const skipReason = mode === 'sync' ? 'NO_MATCHING_FOLDER' : 'NO_MATCHING_CONTENT';
         logger.info(`${noSources}; skipping project`, { ...context, skipReason });
-        results.push({ project, status: 'SKIPPED', skipReason, message: noSources, durationMs: Date.now() - startedAt });
+        results.set(project, { project, status: 'SKIPPED', skipReason, message: noSources, durationMs: Date.now() - startedAt });
         continue;
       }
       // Resolve existing ancestors to catch aliases without creating output.
@@ -223,69 +346,69 @@ async function prepareLocalCopies(
       }
       const existing = await statIfPresent(destination);
       if (existing && !existing.isDirectory()) throw new Error(`Destination project folder must be a directory, not a file or link: ${destination}`);
-      if (mode === 'sync' && !existing) {
-        throw new Error(`Destination project folder must already exist; no folders or files were created: ${destination}`);
-      }
       if (mode === 'drawings') {
         const fileCount = await refreshDrawingDestination(destination, logger, context, async (staging) => {
-          const stagedItems: CopyItem[] = [];
-          for (const entry of sources) await planCopy(entry.source, path.join(staging, entry.name), stagedItems);
-          for (const item of stagedItems) {
-            if (item.directory) await fs.mkdir(item.destination, { recursive: true });
-            else await copyItem(item);
+          let fileCount = 0;
+          for (const entry of sources) {
+            const tree = await readTree(entry.source);
+            await copyTree(tree, entry.source, path.join(staging, entry.name));
+            fileCount += tree.filter(({ directory }) => !directory).length;
           }
-          return stagedItems.filter((item) => !item.directory).length;
+          return fileCount;
         });
         logger.success('Project drawings staging refreshed completely; source contents retained', {
           ...context, entries: sources.map((entry) => entry.name), fileCount,
         });
-        results.push({ project, status: 'SUCCESS', downloadDirectory: destination, durationMs: Date.now() - startedAt });
+        results.set(project, { project, status: 'SUCCESS', downloadDirectory: destination, durationMs: Date.now() - startedAt });
         continue;
       }
-      const items: CopyItem[] = [];
-      for (const entry of sources) await planCopy(entry.source, path.join(destination, entry.name), items);
-      const overwritten = items.filter((item) => item.previous);
-      {
-        const existingFolders = [];
-        for (const entry of sources) {
-          if (await statIfPresent(path.join(destination, entry.name))) existingFolders.push(entry.name);
-        }
-        if (existingFolders.length) {
-          logger.warn('Documents/Photos destination folders already exist; contents will be merged and unrelated files retained', {
-            ...context, existingFolders, overwrittenFileCount: overwritten.length,
-          });
-        }
+      if (!existing) {
+        throw new Error(`Destination project folder must already exist; no folders or files were created: ${destination}`);
       }
-      if (overwritten.length) {
-        logger.warn('Existing destination files require overwrite confirmation', { ...context, existingFileCount: overwritten.length });
-        if (!confirmOverwrite) throw new Error('Existing destination files require overwrite approval; run npm run sync:prepare in an interactive terminal');
-        const approved = await confirmOverwrite({ project, destination, files: overwritten.map((item) => item.destination) });
-        if (!approved) {
-          logger.info('Overwrite declined; project skipped without changes', { ...context, skipReason: 'OVERWRITE_DECLINED' });
-          results.push({ project, status: 'SKIPPED', skipReason: 'OVERWRITE_DECLINED', message: 'Overwrite declined; destination unchanged', durationMs: Date.now() - startedAt });
-          continue;
-        }
-        logger.info('Overwrite approved for existing destination files', { ...context, existingFileCount: overwritten.length });
-      }
-      // Recheck the preview before making changes, especially after waiting for input.
-      await requireDirectory(destination);
-      for (const item of items) await checkDestination(item);
-
-      logger.info(`Copying project ${description} to local staging`, { ...context, entries: sources.map((entry) => entry.name) });
-      for (const item of items) {
-        if (item.directory) await fs.mkdir(item.destination, { recursive: true });
-        else await copyItem(item);
-      }
-      logger.success(`Project ${description} copied; source contents retained`, {
-        ...context, entries: sources.map((entry) => entry.name), fileCount: items.filter((item) => !item.directory).length,
-        overwrittenFileCount: overwritten.length,
-      });
-      results.push({ project, status: 'SUCCESS', downloadDirectory: destination, durationMs: Date.now() - startedAt });
+      const folders = await planSyncFolders(sources, destination);
+      const preview = buildOverwritePreview(project, destination, folders);
+      syncPlans.push({ project, destination, parent: existing, folders, preview, context, startedAt });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logger.error(`Project ${mode} preparation failed`, { ...context, error: message });
-      results.push({ project, status: 'FAILED', message, downloadDirectory: destination, durationMs: Date.now() - startedAt });
+      results.set(project, { project, status: 'FAILED', message, downloadDirectory: destination, durationMs: Date.now() - startedAt });
     }
   }
-  return results;
+  const previews = syncPlans.flatMap(({ preview }) => preview ? [preview] : []);
+  const [first, ...additionalProjects] = previews;
+  let approved = false;
+  let approvalError: string | undefined;
+  if (first) {
+    try {
+      if (!confirmOverwrite) {
+        throw new Error('Existing contents require overwrite approval; run npm run sync:prepare in an interactive terminal');
+      }
+      approved = await confirmOverwrite({ ...first, additionalProjects });
+    } catch (error) {
+      approvalError = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  for (const { project, destination, parent, folders, preview, context, startedAt } of syncPlans) {
+    try {
+      if (preview) {
+        if (approvalError !== undefined) throw new Error(approvalError);
+        if (!approved) {
+          logger.info('Replacement declined; project skipped without changes', { ...context, skipReason: 'OVERWRITE_DECLINED' });
+          results.set(project, { project, status: 'SKIPPED', skipReason: 'OVERWRITE_DECLINED', message: 'Replacement declined; destination unchanged', durationMs: Date.now() - startedAt });
+          continue;
+        }
+      }
+      const fileCount = await refreshSyncFolders(folders, destination, parent, logger, context);
+      logger.success('Project Documents/Photos contents refreshed; source contents retained', {
+        ...context, entries: folders.map(({ name }) => name), fileCount,
+      });
+      results.set(project, { project, status: 'SUCCESS', downloadDirectory: destination, durationMs: Date.now() - startedAt });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('Project sync preparation failed', { ...context, error: message });
+      results.set(project, { project, status: 'FAILED', message, downloadDirectory: destination, durationMs: Date.now() - startedAt });
+    }
+  }
+  return projects.map((project) => results.get(project)!);
 }
