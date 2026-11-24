@@ -72,6 +72,7 @@ test('extracts all contents inside a clean-name parent next to the retained ZIP'
   const f = await fixture(t);
   const zip = makeZip([
     { name: 'Drawings/Version One/A.pdf', contents: 'PDF contents' },
+    { name: 'Drawings/Version One/A101', contents: 'extensionless PDF contents' },
     { name: 'Drawings/ROW Plans/9c.pdf', contents: 'ROW Plans drawing' },
     { name: 'Drawings/Current/9c.pdf', contents: 'Current drawing' },
     { name: 'Documents/readme.txt', contents: 'document contents' },
@@ -84,6 +85,9 @@ test('extracts all contents inside a clean-name parent next to the retained ZIP'
   assert.equal(result.status, 'SUCCESS');
   assert.equal(result.downloadDirectory, f.output);
   assert.equal(await fs.readFile(path.join(f.output, 'Drawings/Version One/A.pdf'), 'utf8'), 'PDF contents');
+  assert.equal(await fs.readFile(path.join(f.output, 'Drawings/Version One/A101-manual-edit.pdf'), 'utf8'),
+    'extensionless PDF contents');
+  await assert.rejects(fs.stat(path.join(f.output, 'Drawings/Version One/A101')), { code: 'ENOENT' });
   assert.equal(await fs.readFile(path.join(f.output, 'Drawings/ROW Plans/9c.pdf'), 'utf8'), 'ROW Plans drawing');
   assert.equal(await fs.readFile(path.join(f.output, 'Drawings/Current/9c.pdf'), 'utf8'), 'Current drawing');
   assert.equal(await fs.readFile(path.join(f.output, 'Documents/readme.txt'), 'utf8'), 'document contents');
@@ -101,6 +105,21 @@ test('extracts all contents inside a clean-name parent next to the retained ZIP'
   assert.equal(await fs.readFile(path.join(f.output, 'root.txt'), 'utf8'), 'root file');
   await assert.rejects(fs.stat(path.join(f.output, 'stale.txt')), { code: 'ENOENT' });
   assert.deepEqual((await fs.readdir(f.directory)).sort(), ['Custom_name', 'Custom_name.zip']);
+});
+
+test('rejects collisions with the renamed output of an extensionless file', async (t) => {
+  const f = await fixture(t);
+  await fs.mkdir(f.output);
+  await fs.writeFile(path.join(f.output, 'keep.txt'), 'previous extraction');
+  await fs.writeFile(f.zipPath, makeZip([
+    { name: 'Drawings/A101' },
+    { name: 'Drawings/A101-manual-edit.pdf' },
+  ]));
+
+  const [result] = await unzipProjects(f.input, f.downloads, quietLogger);
+  assert.equal(result.status, 'FAILED');
+  assert.match(result.message!, /Colliding ZIP paths: "Drawings\/A101-manual-edit\.pdf"/);
+  assert.deepEqual(await fs.readdir(f.output), ['keep.txt']);
 });
 
 test('skips disabled rows and continues after missing folders, missing ZIPs, and invalid archives', async (t) => {

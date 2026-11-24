@@ -41,10 +41,29 @@ function projectWrapper(entries: Entry[]): string | undefined {
     ? root : undefined;
 }
 
+type ExtractionPaths = Map<string, { relative: string; directory: boolean }>;
+
+function registerPath(paths: ExtractionPaths, parts: string[], isDirectory: boolean, caseSensitive: boolean) {
+  for (let length = 1; length <= parts.length; length++) {
+    const relativePath = parts.slice(0, length).join('/');
+    const directoryEntry = length < parts.length || isDirectory;
+    const key = caseSensitive ? relativePath : relativePath.normalize('NFC').toLowerCase();
+    const previous = paths.get(key);
+    if (previous && (previous.relative !== relativePath || !previous.directory || !directoryEntry)) {
+      throw new Error(`Colliding ZIP paths: "${previous.relative}" and "${relativePath}". `
+        + (previous.relative !== relativePath
+          ? 'Preserving both names requires a case-sensitive extraction location.'
+          : 'The archive uses the same output path more than once.'));
+    }
+    paths.set(key, { relative: relativePath, directory: directoryEntry });
+  }
+}
+
 // Validate paths within a fresh staging directory before writing any files.
 async function planExtraction(entries: Entry[], directory: string, caseSensitive: boolean) {
   const wrapper = projectWrapper(entries);
-  const destinations = new Map<string, { relative: string; directory: boolean }>();
+  const originalPaths: ExtractionPaths = new Map();
+  const destinations: ExtractionPaths = new Map();
   const files: { entry: Entry; destination: string }[] = [];
   for (const entry of entries) {
     const isDirectory = entry.fileName.endsWith('/');
@@ -55,7 +74,7 @@ async function planExtraction(entries: Entry[], directory: string, caseSensitive
         || archiveParts.some((part) => !part || part === '.' || part === '..' || part.includes('\u0000'))) {
       throw new Error(`Unsafe or unsupported ZIP entry: ${entry.fileName}`);
     }
-    // Omit only the common project wrapper, preserving every path below it.
+    // Omit the common project wrapper while keeping the remaining hierarchy.
     const parts = wrapper ? archiveParts.slice(1) : archiveParts;
     if (!parts.length) continue; // Explicit entry for the omitted wrapper directory.
     // Preserve archive names. If this host cannot represent one, report it
@@ -64,23 +83,19 @@ async function planExtraction(entries: Entry[], directory: string, caseSensitive
         || /[. ]$/.test(part) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(part))) {
       throw new Error(`ZIP entry name cannot be preserved on Windows: ${entry.fileName}`);
     }
+    registerPath(originalPaths, parts, isDirectory, caseSensitive);
+    if (!isDirectory) {
+      const fileIndex = parts.length - 1;
+      const fileName = parts[fileIndex];
+      if (path.extname(fileName) === '') {
+        parts[fileIndex] = `${fileName}-manual-edit.pdf`;
+      }
+    }
     const destination = path.resolve(directory, ...parts);
     if (!destination.startsWith(`${directory}${path.sep}`)) {
       throw new Error(`ZIP entry escapes the project directory: ${entry.fileName}`);
     }
-    for (let length = 1; length <= parts.length; length++) {
-      const relativePath = parts.slice(0, length).join('/');
-      const directoryEntry = length < parts.length || isDirectory;
-      const key = caseSensitive ? relativePath : relativePath.normalize('NFC').toLowerCase();
-      const previous = destinations.get(key);
-      if (previous && (previous.relative !== relativePath || !previous.directory || !directoryEntry)) {
-        throw new Error(`Colliding ZIP paths: "${previous.relative}" and "${relativePath}". `
-          + (previous.relative !== relativePath
-            ? 'Preserving both names requires a case-sensitive extraction location.'
-            : 'The archive uses the same output path more than once.'));
-      }
-      destinations.set(key, { relative: relativePath, directory: directoryEntry });
-    }
+    registerPath(destinations, parts, isDirectory, caseSensitive);
     if (!isDirectory) files.push({ entry, destination });
   }
   return { destinations, files, wrapper };

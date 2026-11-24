@@ -343,11 +343,11 @@ npm run unzip
 
 Install dependencies with `npm install` first. This local step does not require a browser, Playwright Chromium, or login credentials. It reads the same CSV selected by `PROJECTS_CSV` and uses the same `DOWNLOAD_DIR` configuration (default: `downloads`).
 
-For each enabled row, it opens `<DOWNLOAD_DIR>/<project_clean_name>/<project_clean_name>.zip` and creates a parent folder named `project_clean_name` next to that ZIP. All contents are extracted into `<DOWNLOAD_DIR>/<project_clean_name>/<project_clean_name>/`. If the ZIP has a single project wrapper containing Documents, Photos, or Drawings, extraction omits that wrapper and places its contents directly in the clean-name parent. All deeper folder paths and filenames are preserved, and the source ZIP is retained.
+For each enabled row, it opens `<DOWNLOAD_DIR>/<project_clean_name>/<project_clean_name>.zip` and creates a parent folder named `project_clean_name` next to that ZIP. All contents are extracted into `<DOWNLOAD_DIR>/<project_clean_name>/<project_clean_name>/`. If the ZIP has a single project wrapper containing Documents, Photos, or Drawings, extraction omits that wrapper and places its contents directly in the clean-name parent. Deeper folder paths are preserved, and the source ZIP is retained.
 
 `project_clean_name` locates the project folder and ZIP and names the extraction parent; `project_name` is not used to name extracted contents. For example, PlanGrid's `DB2505 - I-24 at Epps Mill-Buchanan Road/Documents/...` becomes `Documents/...` inside the extraction parent named `DB2505 - I-24 at Epps Mill_Buchanan Road`. The wrapper's hyphen/underscore difference therefore creates no extra folder. This removes only the single project container; it does not flatten Documents, Photos, Drawings, or their nested subfolders. Archives already containing those folders at their root, or containing multiple top-level items, keep their layout.
 
-Apart from the omitted project wrapper, internal names remain unchanged, including trailing spaces and periods. Names unsupported by the host filesystem cause a reported failure rather than being renamed.
+Unzip appends `-manual-edit.pdf` to filenames with no extension, so `Drawings/A101` extracts as `Drawings/A101-manual-edit.pdf`. This changes the filename only. Other names retain their original spelling, including trailing spaces and periods where the host filesystem supports them. Unsupported names cause extraction to fail.
 
 For example, with `project_clean_name=Example_Project`, the result might be:
 
