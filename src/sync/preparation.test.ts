@@ -203,7 +203,7 @@ async function promptFixture(t: TestContext, replies: (string | null)[]) {
   output.on('data', (chunk: Buffer) => {
     const message = chunk.toString();
     transcript += message;
-    if (message.includes('Overwrite these existing files?')) {
+    if (message.includes('Override existing Documents and/or Photos folder contents?')) {
       const reply = replies[questionCount++];
       setImmediate(() => {
         if (reply === null || reply === undefined) input.end();
@@ -363,4 +363,57 @@ test('rejects a project destination link without changing the linked folder', as
   assert.equal(result.status, 'FAILED');
   assert.match(result.message!, /Destination project folder must be a directory, not a file or link/);
   assert.deepEqual(await fs.readdir(outside), []);
+});
+
+test('prompts once for matching files and preserves Kahua-only contents inside matching subfolders', async (t) => {
+  const f = await fixture(t, '1,First,Custom_name,true,,\n2,Second,Next,true,,');
+  for (const project of ['Custom_name', 'Next']) {
+    const source = path.join(f.downloads, project, project);
+    const target = path.join(f.syncRoot, project);
+    await write(path.join(source, 'Documents/Contract/same.txt'), 'incoming');
+    await write(path.join(source, 'Documents/Contract/new.txt'), 'new');
+    await write(path.join(target, 'Documents/Contract/same.txt'), 'old');
+    await write(path.join(target, 'Documents/Contract/kahua-only.txt'), 'keep nested');
+    await write(path.join(target, 'Documents/RFI Documents/rfi.txt'), 'keep rfi');
+    await write(path.join(source, 'Photos/Site/same.jpg'), 'incoming photo');
+    await fs.mkdir(path.join(source, 'Photos/Empty'));
+    await write(path.join(target, 'Photos/Site/same.jpg'), 'old photo');
+    await write(path.join(target, 'Photos/Site/kahua-only.jpg'), 'keep photo');
+  }
+  let prompts = 0;
+  const results = await prepareSync(f.input, f.downloads, f.syncRoot, quietLogger, async (request) => {
+    prompts++;
+    assert.deepEqual([request, ...request.additionalProjects!].map(({ files }) => files), [
+      [path.join(f.destination, 'Documents/Contract/same.txt'), path.join(f.destination, 'Photos/Site/same.jpg')],
+      [path.join(f.syncRoot, 'Next/Documents/Contract/same.txt'), path.join(f.syncRoot, 'Next/Photos/Site/same.jpg')],
+    ]);
+    return true;
+  });
+  assert.equal(prompts, 1);
+  assert.deepEqual(results.map(({ status }) => status), ['SUCCESS', 'SUCCESS']);
+  for (const target of [f.destination, path.join(f.syncRoot, 'Next')]) {
+    assert.equal(await fs.readFile(path.join(target, 'Documents/Contract/same.txt'), 'utf8'), 'incoming');
+    assert.equal(await fs.readFile(path.join(target, 'Documents/Contract/new.txt'), 'utf8'), 'new');
+    assert.equal(await fs.readFile(path.join(target, 'Documents/Contract/kahua-only.txt'), 'utf8'), 'keep nested');
+    assert.equal(await fs.readFile(path.join(target, 'Documents/RFI Documents/rfi.txt'), 'utf8'), 'keep rfi');
+    assert.equal(await fs.readFile(path.join(target, 'Photos/Site/same.jpg'), 'utf8'), 'incoming photo');
+    assert.equal(await fs.readFile(path.join(target, 'Photos/Site/kahua-only.jpg'), 'utf8'), 'keep photo');
+    assert.deepEqual(await fs.readdir(path.join(target, 'Photos/Empty')), []);
+  }
+});
+
+test('keeps a file that appears at a planned destination after batch confirmation', async (t) => {
+  const f = await fixture(t, '1,First,Custom_name,true,,\n2,Second,Next,true,,');
+  await write(path.join(f.extraction, 'Documents/existing.txt'), 'source');
+  await write(path.join(f.destination, 'Documents/existing.txt'), 'old');
+  await write(path.join(f.downloads, 'Next/Next/Documents/new.txt'), 'source new');
+  await fs.mkdir(path.join(f.syncRoot, 'Next/Documents'), { recursive: true });
+  const target = path.join(f.syncRoot, 'Next/Documents/new.txt');
+  const results = await prepareSync(f.input, f.downloads, f.syncRoot, quietLogger, async () => {
+    await write(target, 'added after the preview');
+    return true;
+  });
+  assert.deepEqual(results.map(({ status }) => status), ['SUCCESS', 'FAILED']);
+  assert.match(results[1].message!, /changed after the overwrite preview/);
+  assert.equal(await fs.readFile(target, 'utf8'), 'added after the preview');
 });

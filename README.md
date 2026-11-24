@@ -133,7 +133,7 @@ Complete the shared setup, configure `.env`, and prepare the CSV selected by `PR
 | --- | --- | --- |
 | 1. [Download through Chrome](#step-1-existing-chrome-session) | **`npm run export:chrome`** | Downloads ZIPs for the selected enabled projects and saves a run report. |
 | 2. [Unzip](#step-2-extract-downloaded-zip-files) | **`npm run unzip`** | Extracts each ZIP into its clean-name parent folder. |
-| 3. [Prepare local sync folders](#step-3-prepare-documents-and-photos-for-syncing) | **`npm run sync:prepare`** | Refreshes Documents/Photos inside existing project folders, with one confirmation for replacements. |
+| 3. [Prepare local sync folders](#step-3-prepare-documents-and-photos-for-syncing) | **`npm run sync:prepare`** | Merges Documents/Photos into existing project folders, with one confirmation for matching files. |
 
 **Before the Chrome step, enable remote debugging at `chrome://inspect/#remote-debugging` and keep Chrome signed in to PlanGrid.** The separate [drawings copy](#prepare-drawings-and-other-project-contents) can also run after successful extraction. Alternative login modes, validation, and Part B commands are under [Miscellaneous](#miscellaneous).
 
@@ -411,36 +411,32 @@ SYNC_UP_DIR=C:/Users/MigrationEngineer/Desktop/sync_ups
 
 On macOS, an example absolute path is `SYNC_UP_DIR=/Users/kunalchand/Desktop/sync_ups`. Copy destinations must be separate from the extracted project tree. The configured root and each destination project directory must already exist; this command does not create them.
 
-The command scans enabled projects before copying. If any destination `Documents` or `Photos` folder has contents to replace, it lists the affected projects and **asks once for the whole run**. Each project’s preview includes its destination, folders to refresh, total removal count, and up to ten affected paths.
+The command recursively merges the extracted `Documents` and `Photos` into the destination. It overwrites files at matching relative paths and adds new files and subfolders. Destination-only files and folders stay in place, even inside a matching subfolder. For example, if the extraction contains `Documents/Contract` and the destination also has `Documents/RFI Documents`, the RFI folder is preserved. Destination-only files inside `Documents/Contract` are also preserved.
+
+The command scans all enabled projects before copying. If any incoming files match existing destination files, it lists the affected projects and **asks once for the whole run**. Each project’s preview includes its destination, folders containing matches, total overwrite count, and up to ten example paths.
 
 ```text
-EXISTING CONTENTS FOUND — REVIEW BEFORE REPLACING
-Projects requiring replacement: 2
+EXISTING FILES FOUND — REVIEW BEFORE OVERWRITING
+Projects requiring overwrite approval: 1
 
 Project: North_Site
 Destination: sync_ups/North_Site
-Folders to refresh: Documents
-Existing files and subfolders to remove: 1
-  Documents/example.pdf
+Folders with matching files: Documents
+Existing files that will be overwritten: 1
+  Documents/Contract/example.pdf
 
-Project: South_Site
-Destination: sync_ups/South_Site
-Folders to refresh: Photos
-Existing files and subfolders to remove: 1
-  Photos/site.jpg
-
-All contents inside the listed folders will be removed, including items absent from the latest export.
-The folders themselves stay in place and receive the freshly extracted contents.
-Choose y/yes to approve the listed replacements for this run, or n/Enter to skip the listed projects.
-Projects that require no replacement will still be processed.
-Replace Documents and/or Photos folder contents? [y/N]
+Matching files will be overwritten and new files and folders will be copied from the extraction.
+Files and folders found only at the destination will be kept, including inside matching subfolders.
+Choose y/yes to approve the listed overwrites for this run, or n/Enter to skip the listed projects.
+Projects that require no overwrites will still be processed.
+Override existing Documents and/or Photos folder contents? [y/N]
 ```
 
-- **`y` or `yes`** approves every listed replacement for this run. Each refreshed folder receives the extracted contents and hierarchy after all its old contents are cleared. The project parent and the destination folder itself stay in place. If the extraction omits one of the folders, its destination copy is preserved.
-- **`n`, `no`, Enter, or closed input** skips all listed projects without changing them. Projects that require no replacement still run.
-- **No existing contents to replace** means the command proceeds without a prompt. In a noninteractive run, projects requiring approval are reported as failed and projects requiring no replacement still run.
+- **`y` or `yes`** approves the listed overwrites for this run.
+- **`n`, `no`, Enter, or closed input** skips the listed projects. Projects that require no overwrites still run.
+- **No matching destination files** means the command proceeds without a prompt. In a noninteractive run, projects requiring approval are reported as failed and projects requiring no overwrites still run.
 
-Before clearing each project’s folders, the command rechecks them against the startup scan. If a file was added, removed, or changed since the scan, the command leaves that project’s contents intact, reports a failure, and continues. It stages the fresh contents and backs up the previous contents in the system temporary directory before replacing them. If copying into the destination fails, it attempts to restore the previous contents and reports the backup path if restoration fails. Links and special files are rejected. The command exits with a nonzero status if any project fails.
+Before copying a project, the command rechecks the destination paths targeted by the extraction. If a targeted file changed or appeared since the preview, the command reports the project as failed and continues. Each approved incoming file is staged before replacing its destination file. Links, special files, and file/directory type conflicts at targeted paths are rejected. If a copy fails, files already copied for that project may remain in place. The command exits with a nonzero status if any project fails.
 
 Logs are written to the terminal and `logs/sync-preparation-<timestamp>.log`. The final `SYNC PREPARATION SUMMARY` counts successful copies, skipped projects, and failures from this command only. `skippedByReason` distinguishes `DISABLED`, `MISSING_EXTRACTION`, `NO_MATCHING_FOLDER`, and `OVERWRITE_DECLINED`. `NO_MATCHING_FOLDER` means neither Documents nor Photos was found; it is SKIPPED and is not included in `failedProjects`. That list contains only actual failed projects and is empty when none failed. Missing source inputs and other skips do not cause a nonzero exit status; permission, validation, destination-setup, and copying errors remain failures. The default `sync_ups` contents are ignored by Git. Temporary-folder tests are listed under [Validation commands](#validation-commands).
 

@@ -1,5 +1,4 @@
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 import { readProjects } from '../csv.js';
 import type { Logger, LogContext } from '../logger.js';
@@ -21,8 +20,7 @@ interface TreeEntry {
 }
 interface SyncFolder extends SourceEntry {
   target: string;
-  previous: TreeEntry[];
-  incoming: TreeEntry[];
+  items: { incoming: TreeEntry; previous?: TreeEntry }[];
 }
 
 interface ProjectOverwritePreview {
@@ -146,120 +144,101 @@ async function requireSameDirectory(directory: string, expected: { dev: number; 
   }
 }
 
-async function clearContents(directory: string, expected: { dev: number; ino: number }): Promise<void> {
-  await requireSameDirectory(directory, expected);
-  for (const name of await fs.readdir(directory)) {
-    await requireSameDirectory(directory, expected);
-    await fs.rm(path.join(directory, name), { recursive: true, force: true, maxRetries: 3 });
-  }
-}
-
 async function planSyncFolders(sources: SourceEntry[], destination: string): Promise<SyncFolder[]> {
   const folders: SyncFolder[] = [];
   for (const source of sources) {
     const target = path.join(destination, source.name);
-    const previous = await statIfPresent(target) ? await readTree(target) : [];
-    const incoming = await readTree(source.source);
-    if ((previous.length && !previous[0].directory) || !incoming[0].directory) {
-      throw new Error(`Expected a Documents/Photos directory: ${target}`);
+    const items: SyncFolder['items'] = [];
+    for (const incoming of await readTree(source.source)) {
+      const file = path.join(target, incoming.relative);
+      const stat = await statIfPresent(file);
+      if (stat && !(incoming.directory ? stat.isDirectory() : stat.isFile())) {
+        throw new Error(`Copy destination has an incompatible file/directory type or link: ${file}`);
+      }
+      items.push({ incoming, previous: stat && {
+        relative: incoming.relative, directory: incoming.directory, dev: stat.dev, ino: stat.ino,
+        size: stat.size, mtimeMs: stat.mtimeMs, ctimeMs: stat.ctimeMs,
+      } });
     }
-    folders.push({ ...source, target, previous, incoming });
+    folders.push({ ...source, target, items });
   }
-
   return folders;
 }
 
 function buildOverwritePreview(
   project: Project, destination: string, folders: SyncFolder[],
 ): ProjectOverwritePreview | undefined {
-  const replacing = folders.filter(({ previous }) => previous.length > 1);
-  if (!replacing.length) return undefined;
-  return {
-    project, destination,
-    folders: replacing.map(({ name }) => name),
-    files: replacing.flatMap(({ target, previous }) =>
-      previous.slice(1).map(({ relative }) => path.join(target, relative))),
-  };
+  const files: string[] = [];
+  const affectedFolders: string[] = [];
+  for (const { name, target, items } of folders) {
+    const matches = items.filter(({ incoming, previous }) => !incoming.directory && previous);
+    if (!matches.length) continue;
+    affectedFolders.push(name);
+    files.push(...matches.map(({ incoming }) => path.join(target, incoming.relative)));
+  }
+  if (!files.length) return undefined;
+  return { project, destination, folders: affectedFolders, files };
 }
 
-async function refreshSyncFolders(
-  folders: SyncFolder[],
-  destination: string,
-  parent: { dev: number; ino: number },
-  logger: Logger,
-  context: LogContext,
+async function checkSyncItem(file: string, { incoming, previous }: SyncFolder['items'][number]): Promise<void> {
+  const current = await statIfPresent(file);
+  if (!previous && !current) return;
+  if (previous && current && current.dev === previous.dev && current.ino === previous.ino) {
+    if (incoming.directory && current.isDirectory()) return;
+    if (!incoming.directory && current.isFile() && current.size === previous.size
+        && current.mtimeMs === previous.mtimeMs && current.ctimeMs === previous.ctimeMs) return;
+  }
+  throw new Error(`Destination changed after the overwrite preview; rerun to review it: ${file}`);
+}
+
+async function mergeSyncFolders(
+  folders: SyncFolder[], destination: string, parent: { dev: number; ino: number },
 ): Promise<number> {
-  async function checkDestination({ target, previous }: SyncFolder): Promise<void> {
-    await requireSameDirectory(destination, parent);
-    const current = await statIfPresent(target) ? await readTree(target) : [];
-    if (JSON.stringify(current) !== JSON.stringify(previous)) {
-      throw new Error(`Destination contents changed after the replacement preview; rerun to review them: ${target}`);
+  await requireSameDirectory(destination, parent);
+  for (const { source, target, items } of folders) {
+    if (JSON.stringify(await readTree(source)) !== JSON.stringify(items.map(({ incoming }) => incoming))) {
+      throw new Error(`Extracted source changed during sync preparation; rerun to review it: ${source}`);
     }
+    for (const item of items) await checkSyncItem(path.join(target, item.incoming.relative), item);
   }
 
-  for (const folder of folders) await checkDestination(folder);
-
-  const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'plangrid-sync-'));
-  const staged = path.join(temporary, 'incoming');
-  const backup = path.join(temporary, 'backup');
-  const started: { folder: SyncFolder; directory: { dev: number; ino: number } }[] = [];
-  let keepBackup = false;
-  try {
-    await fs.mkdir(staged);
-    await fs.mkdir(backup);
-    for (const folder of folders) {
-      if (JSON.stringify(await readTree(folder.source)) !== JSON.stringify(folder.incoming)) {
-        throw new Error(`Extracted source changed during sync preparation; rerun to review it: ${folder.source}`);
+  let fileCount = 0;
+  for (const { source, target, items } of folders) {
+    const directories = new Map<string, { dev: number; ino: number }>([[destination, parent]]);
+    for (const item of items) {
+      const from = path.join(source, item.incoming.relative);
+      const to = path.join(target, item.incoming.relative);
+      const directory = path.dirname(to);
+      const expectedParent = directories.get(directory)!;
+      await requireSameDirectory(destination, parent);
+      await requireSameDirectory(directory, expectedParent);
+      await checkSyncItem(to, item);
+      if (item.incoming.directory) {
+        if (!item.previous) await fs.mkdir(to);
+        directories.set(to, item.previous ?? await fs.lstat(to));
+        continue;
       }
-      await copyTree(folder.incoming, folder.source, path.join(staged, folder.name));
-      if (folder.previous.length) await copyTree(folder.previous, folder.target, path.join(backup, folder.name));
-    }
 
-    // Verify both folders before clearing either, including destination-only entries.
-    for (const folder of folders) await checkDestination(folder);
-
-    try {
-      for (const folder of folders) {
-        await checkDestination(folder);
-        if (!folder.previous.length) await fs.mkdir(folder.target);
-        const directory = folder.previous[0] ?? await fs.lstat(folder.target);
-        started.push({ folder, directory });
-        await clearContents(folder.target, directory);
-        await copyTree(folder.incoming.slice(1), path.join(staged, folder.name), folder.target);
-      }
-    } catch (error) {
-      for (const { folder, directory } of started.reverse()) {
+      if (item.previous) {
+        // Stage next to the destination so the file replacement stays on the same filesystem.
+        const temporary = await fs.mkdtemp(path.join(directory, '.sync-copy-'));
         try {
+          const staged = path.join(temporary, 'incoming');
+          await fs.copyFile(from, staged, fs.constants.COPYFILE_EXCL);
           await requireSameDirectory(destination, parent);
-          await clearContents(folder.target, directory);
-          if (folder.previous.length) {
-            await copyTree(folder.previous.slice(1), path.join(backup, folder.name), folder.target);
-          } else {
-            await fs.rmdir(folder.target);
-          }
-        } catch (restoreError) {
-          keepBackup = true;
-          logger.error('Could not restore sync folder contents', {
-            ...context, folder: folder.target, error: restoreError instanceof Error ? restoreError.message : String(restoreError),
-          });
+          await requireSameDirectory(directory, expectedParent);
+          await checkSyncItem(to, item);
+          await fs.rename(staged, to);
+        } finally {
+          await fs.rm(temporary, { recursive: true, force: true, maxRetries: 3 });
         }
+      } else {
+        await fs.copyFile(from, to, fs.constants.COPYFILE_EXCL);
       }
-      if (keepBackup) throw new Error(`Sync refresh and restoration failed; recovery backup retained at ${backup}`, { cause: error });
-      throw error;
-    }
-
-    return folders.reduce((count, folder) => count + folder.incoming.filter(({ directory }) => !directory).length, 0);
-  } finally {
-    if (!keepBackup) {
-      try {
-        await fs.rm(temporary, { recursive: true, force: true, maxRetries: 3 });
-      } catch (error) {
-        logger.error('Could not remove temporary sync directory', {
-          ...context, temporary, error: error instanceof Error ? error.message : String(error),
-        });
-      }
+      fileCount++;
     }
   }
+  return fileCount;
 }
 
 export async function prepareSync(
@@ -367,6 +346,12 @@ async function prepareLocalCopies(
       }
       const folders = await planSyncFolders(sources, destination);
       const preview = buildOverwritePreview(project, destination, folders);
+      const existingFolders = folders.filter(({ items }) => items[0].previous).map(({ name }) => name);
+      if (existingFolders.length) {
+        logger.warn('Documents/Photos destination folders already exist; destination-only items will be kept', {
+          ...context, existingFolders, overwrittenFileCount: preview?.files.length ?? 0,
+        });
+      }
       syncPlans.push({ project, destination, parent: existing, folders, preview, context, startedAt });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -394,13 +379,13 @@ async function prepareLocalCopies(
       if (preview) {
         if (approvalError !== undefined) throw new Error(approvalError);
         if (!approved) {
-          logger.info('Replacement declined; project skipped without changes', { ...context, skipReason: 'OVERWRITE_DECLINED' });
-          results.set(project, { project, status: 'SKIPPED', skipReason: 'OVERWRITE_DECLINED', message: 'Replacement declined; destination unchanged', durationMs: Date.now() - startedAt });
+          logger.info('Overwrite declined; project skipped without changes', { ...context, skipReason: 'OVERWRITE_DECLINED' });
+          results.set(project, { project, status: 'SKIPPED', skipReason: 'OVERWRITE_DECLINED', message: 'Overwrite declined; destination unchanged', durationMs: Date.now() - startedAt });
           continue;
         }
       }
-      const fileCount = await refreshSyncFolders(folders, destination, parent, logger, context);
-      logger.success('Project Documents/Photos contents refreshed; source contents retained', {
+      const fileCount = await mergeSyncFolders(folders, destination, parent);
+      logger.success('Project Documents/Photos copied; source contents retained', {
         ...context, entries: folders.map(({ name }) => name), fileCount,
       });
       results.set(project, { project, status: 'SUCCESS', downloadDirectory: destination, durationMs: Date.now() - startedAt });
