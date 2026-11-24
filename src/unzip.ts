@@ -29,8 +29,10 @@ async function isCaseSensitive(zipPath: string): Promise<boolean> {
   return original.dev !== alternate.dev || original.ino !== alternate.ino;
 }
 
+const contentFolders = new Set(['documents', 'photos', 'drawings']);
+const windowsDeviceName = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i;
+
 function projectWrapper(entries: Entry[]): string | undefined {
-  const contentFolders = new Set(['documents', 'photos', 'drawings']);
   const roots = new Set(entries.map((entry) => entry.fileName.split('/')[0]));
   if (roots.size !== 1) return undefined;
   const root = [...roots][0];
@@ -41,21 +43,24 @@ function projectWrapper(entries: Entry[]): string | undefined {
     ? root : undefined;
 }
 
-type ExtractionPaths = Map<string, { relative: string; directory: boolean }>;
+type ExtractionPaths = Map<string, { relative: string; source: string; directory: boolean }>;
 
-function registerPath(paths: ExtractionPaths, parts: string[], isDirectory: boolean, caseSensitive: boolean) {
+function registerPath(
+  paths: ExtractionPaths, parts: string[], isDirectory: boolean, caseSensitive: boolean, sourceParts = parts,
+) {
   for (let length = 1; length <= parts.length; length++) {
     const relativePath = parts.slice(0, length).join('/');
+    const source = sourceParts.slice(0, length).join('/');
     const directoryEntry = length < parts.length || isDirectory;
     const key = caseSensitive ? relativePath : relativePath.normalize('NFC').toLowerCase();
     const previous = paths.get(key);
-    if (previous && (previous.relative !== relativePath || !previous.directory || !directoryEntry)) {
-      throw new Error(`Colliding ZIP paths: "${previous.relative}" and "${relativePath}". `
+    if (previous && (previous.source !== source || !previous.directory || !directoryEntry)) {
+      throw new Error(`Colliding ZIP paths: ${JSON.stringify(previous.source)} and ${JSON.stringify(source)}. `
         + (previous.relative !== relativePath
           ? 'Preserving both names requires a case-sensitive extraction location.'
-          : 'The archive uses the same output path more than once.'));
+          : `Both map to ${JSON.stringify(relativePath)}.`));
     }
-    paths.set(key, { relative: relativePath, directory: directoryEntry });
+    paths.set(key, { relative: relativePath, source, directory: directoryEntry });
   }
 }
 
@@ -75,15 +80,26 @@ async function planExtraction(entries: Entry[], directory: string, caseSensitive
       throw new Error(`Unsafe or unsupported ZIP entry: ${entry.fileName}`);
     }
     // Omit the common project wrapper while keeping the remaining hierarchy.
-    const parts = wrapper ? archiveParts.slice(1) : archiveParts;
-    if (!parts.length) continue; // Explicit entry for the omitted wrapper directory.
-    // Preserve archive names. If this host cannot represent one, report it
-    // rather than silently renaming it (or creating a Windows alternate stream).
+    const originalParts = wrapper ? archiveParts.slice(1) : archiveParts;
+    if (!originalParts.length) continue; // Explicit entry for the omitted wrapper directory.
+    registerPath(originalPaths, originalParts, isDirectory, caseSensitive);
+    const parts = [...originalParts];
+    // A project wrapper can remain when the archive also has other top-level items.
+    const contentRoot = parts.slice(0, 2).findIndex((part) => contentFolders.has(part.toLowerCase()));
+    const directoryCount = isDirectory ? parts.length : parts.length - 1;
+    if (contentRoot !== -1) {
+      for (let index = contentRoot + 1; index < directoryCount; index++) {
+        const cleaned = parts[index].replace(/[\\/:*?"<>|]/g, '_').replace(/[\x00-\x1F\x7F]/g, '_').replace(/[. ]+$/g, '');
+        if (!cleaned || windowsDeviceName.test(cleaned)) {
+          throw new Error(`ZIP subfolder cannot be cleaned to a Windows-safe name: ${JSON.stringify(entry.fileName)}`);
+        }
+        parts[index] = cleaned;
+      }
+    }
     if (process.platform === 'win32' && parts.some((part) => /[<>:"\\|?*\u0000-\u001f]/u.test(part)
-        || /[. ]$/.test(part) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(part))) {
+        || /[. ]$/.test(part) || windowsDeviceName.test(part))) {
       throw new Error(`ZIP entry name cannot be preserved on Windows: ${entry.fileName}`);
     }
-    registerPath(originalPaths, parts, isDirectory, caseSensitive);
     if (!isDirectory) {
       const fileIndex = parts.length - 1;
       const fileName = parts[fileIndex];
@@ -95,7 +111,7 @@ async function planExtraction(entries: Entry[], directory: string, caseSensitive
     if (!destination.startsWith(`${directory}${path.sep}`)) {
       throw new Error(`ZIP entry escapes the project directory: ${entry.fileName}`);
     }
-    registerPath(destinations, parts, isDirectory, caseSensitive);
+    registerPath(destinations, parts, isDirectory, caseSensitive, originalParts);
     if (!isDirectory) files.push({ entry, destination });
   }
   return { destinations, files, wrapper };
@@ -246,7 +262,7 @@ export async function unzipProjects(inputFile: string, downloadRoot: string, log
       logger.info('Extracting project ZIP into its clean-name parent folder', context);
       staging = await fs.mkdtemp(path.join(projectDirectory, '.unzip-stage-'));
       const stagingDirectory = staging;
-      const fileCount = await withArchive(zipPath, async (zip, entries) => {
+      const plan = await withArchive(zipPath, async (zip, entries) => {
         const plan = await planExtraction(entries, stagingDirectory, caseSensitive);
         if (plan.wrapper) {
           logger.info('Omitting the ZIP project wrapper; keeping its contents inside the clean-name parent', {
@@ -257,10 +273,19 @@ export async function unzipProjects(inputFile: string, downloadRoot: string, log
           if (item.directory) await fs.mkdir(path.join(stagingDirectory, item.relative), { recursive: true });
         }
         for (const file of plan.files) await extractFile(zip, file.entry, file.destination);
-        return plan.files.length;
+        return plan;
       });
       await publishExtraction(stagingDirectory, directory, logger);
-      logger.success('Project ZIP extracted; extraction folder refreshed and source ZIP retained', { ...context, fileCount });
+      for (const item of plan.destinations.values()) {
+        if (item.directory && item.source !== item.relative) {
+          logger.info('Cleaned extracted ZIP subfolder path', {
+            ...context, paths: { original: item.source, extracted: item.relative },
+          });
+        }
+      }
+      logger.success('Project ZIP extracted; extraction folder refreshed and source ZIP retained', {
+        ...context, fileCount: plan.files.length,
+      });
       results.push({ project, status: 'SUCCESS', downloadDirectory: directory, durationMs: Date.now() - startedAt });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

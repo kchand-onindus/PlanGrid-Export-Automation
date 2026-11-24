@@ -347,7 +347,9 @@ For each enabled row, it opens `<DOWNLOAD_DIR>/<project_clean_name>/<project_cle
 
 `project_clean_name` locates the project folder and ZIP and names the extraction parent; `project_name` is not used to name extracted contents. For example, PlanGrid's `DB2505 - I-24 at Epps Mill-Buchanan Road/Documents/...` becomes `Documents/...` inside the extraction parent named `DB2505 - I-24 at Epps Mill_Buchanan Road`. The wrapper's hyphen/underscore difference therefore creates no extra folder. This removes only the single project container; it does not flatten Documents, Photos, Drawings, or their nested subfolders. Archives already containing those folders at their root, or containing multiple top-level items, keep their layout.
 
-Unzip appends `-manual-edit.pdf` to filenames with no extension, so `Drawings/A101` extracts as `Drawings/A101-manual-edit.pdf`. This changes the filename only. Other names retain their original spelling, including trailing spaces and periods where the host filesystem supports them. Unsupported names cause extraction to fail.
+Unzip cleans subfolder names under `Documents`, `Photos`, and `Drawings` on all platforms. It replaces Windows-invalid characters and ASCII control characters with `_` and removes trailing periods and spaces. For example, `Drawings/Resurf./B5.pdf` extracts as `Drawings/Resurf/B5.pdf`. Each changed folder path is logged. Empty or reserved cleaned names and paths that collide after cleanup fail the project before replacing previous output.
+
+Unzip appends `-manual-edit.pdf` to filenames with no extension, so `Drawings/A101` extracts as `Drawings/A101-manual-edit.pdf`. Filenames with extensions and folder names outside the cleanup scope keep their original spelling. Names the host cannot represent cause extraction to fail.
 
 For example, with `project_clean_name=Example_Project`, the result might be:
 

@@ -25,6 +25,7 @@ function makeZip(entries: FixtureEntry[]): Buffer {
     const header = Buffer.alloc(30);
     header.writeUInt32LE(0x04034b50);
     header.writeUInt16LE(20, 4);
+    header.writeUInt16LE(0x0800, 6); // Entry names are UTF-8.
     header.writeUInt32LE(checksum, 14);
     header.writeUInt32LE(data.length, 18);
     header.writeUInt32LE(data.length, 22);
@@ -33,6 +34,7 @@ function makeZip(entries: FixtureEntry[]): Buffer {
     directory.writeUInt32LE(0x02014b50);
     directory.writeUInt16LE(0x0314, 4);
     directory.writeUInt16LE(20, 6);
+    directory.writeUInt16LE(0x0800, 8);
     directory.writeUInt32LE(checksum, 16);
     directory.writeUInt32LE(data.length, 20);
     directory.writeUInt32LE(data.length, 24);
@@ -118,7 +120,7 @@ test('rejects collisions with the renamed output of an extensionless file', asyn
 
   const [result] = await unzipProjects(f.input, f.downloads, quietLogger);
   assert.equal(result.status, 'FAILED');
-  assert.match(result.message!, /Colliding ZIP paths: "Drawings\/A101-manual-edit\.pdf"/);
+  assert.match(result.message!, /Colliding ZIP paths: "Drawings\/A101" and "Drawings\/A101-manual-edit\.pdf"/);
   assert.deepEqual(await fs.readdir(f.output), ['keep.txt']);
 });
 
@@ -288,6 +290,57 @@ test('preflights unsafe paths, links, and colliding ZIP entries before writing f
     assert.equal(result.status, 'FAILED', JSON.stringify(badEntries));
     assert.deepEqual(await fs.readdir(f.directory), ['Custom_name.zip']);
     await assert.rejects(fs.stat(path.join(f.downloads, 'outside.txt')), { code: 'ENOENT' });
+  }
+});
+
+test('cleans subfolders below Documents, Photos, and Drawings on every platform', async (t) => {
+  const f = await fixture(t);
+  const zip = makeZip([
+    { name: 'Project/Drawings/Resurf./Structure Sign1.pdf' },
+    { name: 'Project/Drawings/Resurf./B5.pdf' },
+    { name: 'Project/Documents/Rev.  /A:B?/A101' },
+    { name: 'Project/Photos/Field\x01Photos\x7F./site.jpg' },
+    { name: 'Project/Photos/Empty. /' },
+  ]);
+  await fs.writeFile(f.zipPath, zip);
+  const renames: unknown[] = [];
+  const logger = { ...quietLogger, info(message: string, context?: LogContext) {
+    if (message === 'Cleaned extracted ZIP subfolder path') renames.push(context?.paths);
+  } };
+  const [result] = await unzipProjects(f.input, f.downloads, logger);
+  assert.equal(result.status, 'SUCCESS', result.message);
+  for (const name of [
+    'Drawings/Resurf/Structure Sign1.pdf', 'Drawings/Resurf/B5.pdf',
+    'Documents/Rev/A_B_/A101-manual-edit.pdf', 'Photos/Field_Photos_/site.jpg',
+  ]) {
+    assert.equal(await fs.readFile(path.join(f.output, name), 'utf8'), 'drawing contents');
+  }
+  assert.ok((await fs.stat(path.join(f.output, 'Photos/Empty'))).isDirectory());
+  assert.deepEqual(renames, [
+    { original: 'Drawings/Resurf.', extracted: 'Drawings/Resurf' },
+    { original: 'Documents/Rev.  ', extracted: 'Documents/Rev' },
+    { original: 'Documents/Rev.  /A:B?', extracted: 'Documents/Rev/A_B_' },
+    { original: 'Photos/Field\x01Photos\x7F.', extracted: 'Photos/Field_Photos_' },
+    { original: 'Photos/Empty. ', extracted: 'Photos/Empty' },
+  ]);
+  assert.deepEqual(await fs.readFile(f.zipPath), zip);
+});
+
+test('rejects conflicting or unusable cleaned subfolders before refreshing previous output', async (t) => {
+  for (const [names, error] of [
+    [['Documents/Resurf./a.pdf', 'Documents/Resurf/b.pdf'], /"Documents\/Resurf\." and "Documents\/Resurf"/],
+    [['Drawings/Rev.txt./a.pdf', 'Drawings/Rev.txt'], /Colliding ZIP paths/],
+    [['Photos/.../a.jpg'], /cannot be cleaned to a Windows-safe name/],
+    [['Photos/CON./a.jpg'], /cannot be cleaned to a Windows-safe name/],
+  ] as const) {
+    const f = await fixture(t);
+    await fs.mkdir(f.output);
+    await fs.writeFile(path.join(f.output, 'previous.txt'), 'previous extraction');
+    await fs.writeFile(f.zipPath, makeZip(names.map((name) => ({ name }))));
+    const [result] = await unzipProjects(f.input, f.downloads, quietLogger);
+    assert.equal(result.status, 'FAILED', JSON.stringify(names));
+    assert.match(result.message!, error);
+    assert.deepEqual(await fs.readdir(f.output), ['previous.txt']);
   }
 });
 
