@@ -21,8 +21,8 @@ export const paths = {
   drawingsRoot: path.isAbsolute(process.env[ENV_KEYS.drawingsDir] ?? '')
     ? process.env[ENV_KEYS.drawingsDir]!
     : path.resolve(projectRoot, process.env[ENV_KEYS.drawingsDir] ?? 'drawings'),
-  logRoot: path.join(projectRoot, 'logs'),
-  runsRoot: path.join(projectRoot, 'runs'),
+  logRoot: path.resolve(projectRoot, process.env[ENV_KEYS.logDir]?.trim() || 'logs'),
+  runsRoot: path.resolve(projectRoot, process.env[ENV_KEYS.runsDir]?.trim() || 'runs'),
 };
 
 export const timeouts = TIMEOUTS;

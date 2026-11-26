@@ -231,7 +231,7 @@ export function resolveRetryReportPath(target: string, locations: { projectRoot:
     return path.resolve(locations.projectRoot, target);
   }
   if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(target)) {
-    throw new Error('Retry requires a run ID (the folder name inside runs/) or a path to a JSON results report');
+    throw new Error('Retry requires a run ID (the folder name inside RUNS_DIR) or a path to a JSON results report');
   }
   return path.join(locations.runsRoot, target, 'results.json');
 }

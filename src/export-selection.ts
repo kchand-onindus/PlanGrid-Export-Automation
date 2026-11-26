@@ -128,12 +128,12 @@ Relative paths resolve from this repository. Unzip and local staging use the sam
 Batch defaults: BATCH_SKIP=0; BATCH_LIMIT unset/blank means all remaining.
 Command-line values override .env. Retry mode ignores both batch environment
 settings and cannot be combined with explicit skip/offset/limit arguments.
-Copy the entire folder name inside runs/ or the runId printed in the terminal.
+Copy the entire folder name inside RUNS_DIR or the runId printed in the terminal.
 For remaining failures after a retry, use the new retry run's ID.
-A bare run ID expands to runs/<run-id>/results.json automatically. Explicit
+A bare run ID expands to <RUNS_DIR>/<run-id>/results.json. Explicit
 relative/absolute JSON report paths are also supported. Relative paths resolve
-from this repository. Reports are saved under
-runs/<UTC-timestamp>_<batch-or-retry>_<unique-suffix>/, independently of DOWNLOAD_DIR.
+from this repository. Set RUNS_DIR in .env for export reports (default: runs)
+and LOG_DIR for command logs (default: logs). Both are independent of DOWNLOAD_DIR.
 CSV data is never rewritten. Retry records must still be enabled in the CSV.
 Chrome mode verifies authentication automatically and disconnects without Inspector
 pauses. Chrome's Allow prompt may still appear. CAPTCHA/OTP remain manual;

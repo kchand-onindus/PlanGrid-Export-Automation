@@ -112,7 +112,6 @@ async function main(): Promise<void> {
     canAttemptLogout = true;
 
     const results: ProjectResult[] = [];
-    let reuseProjectsPage = true;
     for (const [index, { project, csvPosition, enabledPosition }] of selection.entries.entries()) {
       logger.info('Processing project', {
         projectUid: project.projectUid,
@@ -125,8 +124,7 @@ async function main(): Promise<void> {
         enabledPosition,
         runId: run.report.runId,
       });
-      const result = await run.execute(index, () => exportProject(page!, project, paths.downloadRoot, { reuseProjectsPage }));
-      reuseProjectsPage = false;
+      const result = await run.execute(index, () => exportProject(page!, project, paths.downloadRoot));
       results.push(result);
 
       const resultLog = {

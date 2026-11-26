@@ -7,42 +7,6 @@ import { saveExportDownload } from './export-download.js';
 import { AS_BUILT_EXCLUDED_CHECKBOX_NAMES, PROJECT_SELECTORS, URLS } from '../utils/constants.js';
 import type { ExportErrorType, Project, ProjectResult } from './types.js';
 
-async function selectProject(page: Page, project: Project): Promise<void> {
-  const searchTerm = project.projectName;
-  const searchInput = page.locator(PROJECT_SELECTORS.searchInput);
-
-  logger.info('Searching for project', { searchTerm });
-  await searchInput.fill(searchTerm, { timeout: timeouts.projectsReadyMs });
-
-  const rows = page.locator(PROJECT_SELECTORS.projectRows);
-  // Each project link's title contains only its full name, without addresses or workspace text.
-  const matchingRows = rows.and(page.getByTitle(searchTerm, { exact: true }));
-  try {
-    await matchingRows.first().waitFor({ state: 'visible', timeout: timeouts.projectsReadyMs });
-  } catch (error) {
-    throw new ExportError('PROJECT_NOT_FOUND',
-      `No project row with exact name "${searchTerm}" became visible within ${timeouts.projectsReadyMs / 1000} seconds`,
-      { cause: error },
-    );
-  }
-
-  const matchingCount = await matchingRows.count();
-  if (matchingCount === 0) {
-    throw new ExportError('PROJECT_NOT_FOUND', `No project row with exact name "${searchTerm}" was found after searching`);
-  }
-  if (matchingCount > 1) {
-    throw new ExportError('PROJECT_AMBIGUOUS',
-      `Multiple project rows have the exact name "${searchTerm}"; refusing to select an ambiguous result `
-        + `(matchingCount: ${matchingCount})`,
-    );
-  }
-
-  logger.info('Opening project with exact name match', { searchTerm, matchingCount });
-  // Retain strict clicking so a newly appearing duplicate cannot silently select the first row.
-  await matchingRows.click({ timeout: timeouts.projectsReadyMs });
-  await page.waitForLoadState('domcontentloaded');
-}
-
 function startDownloadStatusUpdates(context: LogContext): () => void {
   const startedAt = Date.now();
   let nextElapsedMs = timeouts.downloadStatusFirstMs;
@@ -232,7 +196,6 @@ export async function exportProject(
   page: Page,
   project: Project,
   downloadRoot: string,
-  options: { reuseProjectsPage?: boolean } = {},
 ): Promise<ProjectResult> {
   const startedAt = Date.now();
 
@@ -248,37 +211,40 @@ export async function exportProject(
   let errorType: ExportErrorType = 'PROJECTS_PAGE_ERROR';
 
   try {
-    const projectsUrl = new URL(URLS.projects);
-    const currentUrl = new URL(page.url());
-    const canReuseProjectsPage = options.reuseProjectsPage
-      && currentUrl.origin === projectsUrl.origin
-      && (currentUrl.pathname === projectsUrl.pathname || currentUrl.pathname === `${projectsUrl.pathname}/`);
-    if (canReuseProjectsPage) {
-      logger.info('Reusing verified projects landing page; checking readiness before searching');
-      await page.waitForLoadState('domcontentloaded', { timeout: timeouts.projectsNavigationMs });
-    } else {
-      logger.info('Opening projects landing page before searching', { projectsUrl: URLS.projects });
-      await page.goto(URLS.projects, {
-        waitUntil: 'domcontentloaded',
-        timeout: timeouts.projectsNavigationMs,
-      });
+    const { projectUid, projectName } = project;
+    if (!projectUid || /[^a-zA-Z0-9_-]/.test(projectUid)) {
+      throw new ExportError('PROJECT_SELECTION_ERROR', 'project_uid must be a nonempty PlanGrid project identifier');
     }
-    await page.locator(PROJECT_SELECTORS.searchInput).waitFor({
-      state: 'visible',
-      timeout: timeouts.projectsReadyMs,
-    });
-    logger.info('Waiting for projects list to finish loading', {
-      settleMs: timeouts.projectsPageSettleMs,
-    });
-    await page.waitForTimeout(timeouts.projectsPageSettleMs);
-    logger.info('Projects landing page ready for project search', { projectName: project.projectName });
 
-    errorType = 'PROJECT_SELECTION_ERROR';
-    await selectProject(page, project);
+    const projectBase = new URL(`${URLS.projects}/${projectUid}/`);
+    const homeUrl = new URL('home', projectBase);
+    logger.info('Opening PlanGrid project home directly', { projectUid, projectName });
+    const response = await page.goto(homeUrl.href, {
+      waitUntil: 'domcontentloaded',
+      timeout: timeouts.projectsNavigationMs,
+    });
+    const status = response?.status();
+    if (status === 404) {
+      throw new ExportError('PROJECT_NOT_FOUND', 'PlanGrid could not find the project for this project_uid (HTTP 404)');
+    }
+    if (status !== undefined && status >= 400) {
+      throw new Error(`PlanGrid project navigation returned HTTP ${status}`);
+    }
+    function verifyProjectHome(): void {
+      const currentUrl = new URL(page.url());
+      if (currentUrl.origin !== homeUrl.origin
+          || (currentUrl.pathname !== homeUrl.pathname && currentUrl.pathname !== `${homeUrl.pathname}/`)) {
+        throw new ExportError('PROJECT_NOT_FOUND', 'PlanGrid did not open the project home for this project_uid');
+      }
+    }
+    verifyProjectHome();
+    const settings = page.locator(PROJECT_SELECTORS.settingsLink);
+    await settings.waitFor({ state: 'visible', timeout: timeouts.projectsReadyMs });
+    verifyProjectHome();
 
     errorType = 'EXPORT_FORM_ERROR';
     logger.info('Opening project Settings');
-    await page.locator(PROJECT_SELECTORS.settingsLink).click();
+    await settings.click({ timeout: timeouts.projectsReadyMs });
     await page.waitForLoadState('domcontentloaded');
 
     logger.info('Opening Download and Export As-Builts');
@@ -293,6 +259,10 @@ export async function exportProject(
     const firstTimeExport = await startDate.isVisible().catch(() => false);
     const exportType = firstTimeExport ? 'first-time' : 'recurring';
     const projectUrl = page.url();
+    const exportPage = new URL(projectUrl);
+    if (exportPage.origin !== projectBase.origin || !exportPage.pathname.startsWith(projectBase.pathname)) {
+      throw new ExportError('PROJECT_SELECTION_ERROR', 'As-built controls are outside the project for this project_uid');
+    }
     let previousBuildIds = new Set<string>();
 
     if (!firstTimeExport) {

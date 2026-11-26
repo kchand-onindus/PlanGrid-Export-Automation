@@ -12,6 +12,8 @@ export const ENV_KEYS = {
   platformUrl: 'PLATFORM_URL',
   projectsCsv: 'PROJECTS_CSV',
   downloadDir: 'DOWNLOAD_DIR',
+  logDir: 'LOG_DIR',
+  runsDir: 'RUNS_DIR',
   syncUpDir: 'SYNC_UP_DIR',
   drawingsDir: 'DRAWINGS_DIR',
   batchSkip: 'BATCH_SKIP',
@@ -28,7 +30,6 @@ export const TIMEOUTS = {
   actionMs: 15_000,
   projectsNavigationMs: 45_000,
   projectsReadyMs: 30_000,
-  projectsPageSettleMs: 5_000,
   progressPollMs: 2_000,
   downloadStatusFirstMs: 10 * 60_000,
 } as const;
@@ -52,7 +53,6 @@ export const AUTODESK_SELECTORS = {
 
 export const PROJECT_SELECTORS = {
   searchInput: 'input[name="project_search"]',
-  projectRows: 'a[data-qa^="projects-table.row"]',
   settingsLink: 'li[data-qa="navigation.settings"] a',
   asBuiltLink: 'a[data-qa="Exports.asbuilts"]',
   asBuiltPage: '.generateStaple form:visible, .asbuiltsList:visible',

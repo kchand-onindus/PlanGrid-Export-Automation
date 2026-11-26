@@ -44,15 +44,17 @@ An unset or blank `PROJECTS_CSV` defaults to `input/projects.csv`. Relative path
 
 This setting is shared by `export:chrome`, `export`, `headless`, `unzip`, `sync:prepare`, and `drawing:prepare`. Keep the same CSV configured through export, extraction, local staging, and any failure retries. Keep the chosen list stable when advancing batch offsets. Changing `PROJECTS_CSV` does not change download or staging locations; configure the directories below separately. Part B continues to use `input/version_sets.csv`.
 
-For the main Chrome → unzip → sync workflow and the separate drawings copy, configure these directories:
+Configure these directories in `.env`:
 
 ```env
 DOWNLOAD_DIR=downloads
 SYNC_UP_DIR=sync_ups
 DRAWINGS_DIR=drawings
+LOG_DIR=logs
+RUNS_DIR=runs
 ```
 
-`DOWNLOAD_DIR` is the source/output root shared by Chrome export, unzip, and both copy commands. `SYNC_UP_DIR` is the destination root for copied Documents/Photos. `DRAWINGS_DIR` is a separate destination for everything else, including Drawings and other files/folders. Their defaults are `downloads`, `sync_ups`, and `drawings` inside the repository. Relative paths resolve from the repository folder; absolute paths can point to different folders or drives.
+`DOWNLOAD_DIR` is the source/output root shared by Chrome export, unzip, and both copy commands. `SYNC_UP_DIR` is the destination root for copied Documents/Photos. `DRAWINGS_DIR` is a separate destination for everything else, including Drawings and other files/folders. `LOG_DIR` holds command log files, and `RUNS_DIR` holds the export reports (`results.json` and `failed-projects.csv` in each run folder). The paths above are the defaults. Unset or blank `LOG_DIR` and `RUNS_DIR` use those defaults. Relative paths resolve from the repository folder. Absolute paths can point to different folders or drives. The commands create missing log and report directories as needed.
 
 Windows example (forward slashes work with Node.js on Windows):
 
@@ -60,6 +62,8 @@ Windows example (forward slashes work with Node.js on Windows):
 DOWNLOAD_DIR=D:/PlanGrid/downloads
 SYNC_UP_DIR=E:/Migration/sync_ups
 DRAWINGS_DIR=E:/Migration/drawings
+LOG_DIR="D:/PlanGrid/output logs"
+RUNS_DIR=D:/PlanGrid/runs
 ```
 
 macOS example:
@@ -68,6 +72,8 @@ macOS example:
 DOWNLOAD_DIR=/Volumes/PlanGridData/downloads
 SYNC_UP_DIR=/Users/kunalchand/Desktop/sync_ups
 DRAWINGS_DIR=/Users/kunalchand/Desktop/drawings
+LOG_DIR="/Volumes/PlanGridData/output logs"
+RUNS_DIR=/Volumes/PlanGridData/runs
 ```
 
 If the ZIP contains case-distinct files in the same directory, use a case-sensitive download location to preserve both. Keep that volume mounted during download, extraction, and copying. Both copy destinations must also support the names being copied; the commands do not rename conflicting files.
@@ -80,8 +86,6 @@ BATCH_LIMIT=50
 ```
 
 `BATCH_SKIP` defaults to `0`; an unset or blank `BATCH_LIMIT` means all remaining enabled projects. The sample `.env.example` leaves the limit blank to preserve the unrestricted default. Skip/offset must be a non-negative integer; a specified limit must be a positive integer (`0` is invalid). Command-line `skip=N` (alias `offset=N`) and `limit=N` override their respective settings. The original `--skip`/`--offset` and `--limit` flags are also supported. Failure retry mode ignores both environment settings. These controls apply only to the three export commands; unzip and both local preparation commands retain their existing CSV-driven selection.
-
-Execution reports are stored in **`runs/<run-id>/` at the repository root**, independently of `DOWNLOAD_DIR`. No output-directory setting is needed for reports.
 
 For the miscellaneous automated-login modes, also configure:
 
@@ -99,23 +103,23 @@ Update the CSV selected by `PROJECTS_CSV` (default: `input/projects.csv`) with o
 
 ```csv
 project_uid,project_name,project_clean_name,enabled,start_date,end_date
-,Example Project,Example_Project,true,,
-project-12345,Another Project,Another_Project,true,2026-01-01,2026-08-31
-project-12346,Disabled Project,Disabled_Project,false,,
+7a4d2bb4-ffe6-57bc-8d5d-ea494a96d6cf,Example Project,Example_Project,true,,
+d6431525-3469-4a16-b729-04d3db0b77b7,Another Project,Another_Project,true,2026-01-01,2026-08-31
+,Disabled Project,Disabled_Project,false,,
 ```
 
 The CSV must contain `project_uid`, `project_name`, `project_clean_name`, and `enabled` columns; `start_date`, `end_date`, and `excel_name` are optional. Column order may vary. Extra columns such as `action`, `sheets_count`, and future metadata fields are preserved in export reports but do not affect automation. Header names must be unique, and every row must contain the same number of fields as the header, including blank fields. The example above replaces the old `project_number` header.
 
 | Column | Purpose |
 | --- | --- |
-| `project_uid` | Project identifier used in logs. May be blank; project selection still uses `project_name`. |
-| `project_name` | Required full PlanGrid project name, preserved exactly for search and selection, including capitalization and all whitespace. |
+| `project_uid` | PlanGrid project ID from its home URL. Required for each selected export. It may be blank for local workflows. |
+| `project_name` | Required full PlanGrid project name, preserved exactly in logs and reports, including capitalization and all whitespace. |
 | `project_clean_name` | Required folder name and ZIP base name, without the `.zip` extension. |
 | `enabled` | Required `true` or `false`; disabled projects are skipped. |
 | `start_date`, `end_date` | Optional dates in `YYYY-MM-DD` format. Blank values leave platform defaults unchanged. |
 | `excel_name` | Optional source label, preserved exactly in project snapshots and the failure CSV. It does not affect project selection, export settings, or filenames. Missing or blank values are supported. |
 
-`project_name` is the source of truth and is never trimmed or normalized. Include any leading/trailing spaces that exist in PlanGrid's name. CSV quotes are syntax, so `"Project, One "` produces the project name `Project, One` followed by one space, without the surrounding quotes. Empty or whitespace-only names are rejected.
+`project_name` is never trimmed or normalized. Include any leading/trailing spaces that exist in PlanGrid's name. CSV quotes are syntax, so `"Project, One "` produces the project name `Project, One` followed by one space, without the surrounding quotes. Empty or whitespace-only names are rejected.
 
 The workflows only read this CSV; they do not rewrite it or automatically change `enabled` after a project succeeds or fails.
 
@@ -127,7 +131,7 @@ Keep the intended export pool enabled and use batch controls to choose the next 
 
 Complete the shared setup, configure `.env`, and prepare the CSV selected by `PROJECTS_CSV` first. Run the following steps separately from the repository folder, continuing only after the previous step succeeds. All commands work on **Windows Command Prompt, Windows PowerShell, macOS, and Linux**.
 
-**Keep `results.json` and `failed-projects.csv` closed while any export command is running.** Excel, editors, and file-preview panes can lock files, especially on Windows, preventing the script from updating its reports. Follow progress in the terminal or the run log under `logs/`, and open reports after the command exits. See [report file access and recovery](#report-file-access-and-recovery) if a save fails.
+**Keep `results.json` and `failed-projects.csv` closed while any export command is running.** Excel, editors, and file-preview panes can lock files, especially on Windows, preventing the script from updating its reports. Follow progress in the terminal or the run log under `LOG_DIR`, and open reports after the command exits. See [report file access and recovery](#report-file-access-and-recovery) if a save fails.
 
 | Step | Command | Result |
 | --- | --- | --- |
@@ -158,7 +162,7 @@ Set up Chrome on the machine that will run the script:
 Run the highlighted command from the repository folder. For each execution:
 
 1. Click **Allow** if Chrome asks to share its debugging session.
-2. The script opens a new export tab and navigates to `https://app.plangrid.com/projects`. It automatically verifies the projects URL and visible project search box, then starts exports **without an Inspector Resume step**. The first selected project reuses this page and repeats readiness checks before searching, without an extra navigation. If authentication cannot be verified, no exports start: sign in manually in Chrome, wait for the projects page and search box, then run the command again.
+2. The script opens a new export tab and navigates to `https://app.plangrid.com/projects`. It automatically verifies the projects URL and visible project search box, then starts exports **without an Inspector Resume step**. If authentication cannot be verified, no exports start: sign in manually in Chrome, wait for the projects page and search box, then run the command again.
 3. After exports, the script saves and prints the results, then disconnects automatically **without a final Inspector pause**. Chrome and its tabs remain open and signed in. The script skips logout during failure cleanup and also disconnects without a pause when the run fails.
 
 For every selected project, the script opens **Settings → Download and Export As-Builts** and requests a fresh export. If previous builds exist, it captures every existing build ID from the table, including IDs in hidden links on processing rows, then immediately clicks **Generate a new As-built** to open the date form. It does not wait for older builds to finish. First-time projects open the form directly and start with no previous IDs. Both paths fill configured dates (blank CSV dates preserve platform defaults), uncheck **Current Set**, **Drawing Log**, and **Current Set Log** when present, and check every other Include option. The script verifies all final checkbox states before clicking **Zip File**; a missing checkbox list or a setting that cannot be verified fails the project before submission. One confirmation log records the checked and unchecked options for that project. This export behavior is shared by all three export commands, including explicit retries.
@@ -167,20 +171,11 @@ After returning to the table, the script compares its build IDs with the snapsho
 
 Failure detection is deliberately limited: a tracked build whose visible status is exactly **Failed**, **Error**, **Cancelled**, or **Canceled** (ignoring case and an optional final period/exclamation mark) fails that project. Unknown or blank status text alone is not treated as terminal; until the `100%`/visible-Download pair is met, it produces a warning and continued polling. Unusable page controls or a missing/duplicated tracked row fail through the existing control-readiness checks. Older builds' statuses do not determine the new build's outcome. Build generation and transfer have no overall timeout. Normal runs process their selected CSV range regardless of earlier reports; only an explicit retry command selects previous failures. Reports do not resume builds or partial downloads.
 
-After authentication, the first selected project reuses the projects page when its URL still matches. It waits for the page and search field to be ready even while the screen is still rendering. Later selected projects navigate to the landing page once before searching, including after a previous project fails or is not found. Each project is logged with its position/total within the run, its original CSV position/total, and its enabled-list position.
+After authentication, the script opens `https://app.plangrid.com/projects/<project_uid>/home` for each selected row. Project home navigation allows up to 45 seconds, and the script waits up to 30 seconds for the Settings link to become visible. It verifies that PlanGrid opened the requested project and that the As-built controls are within that project before generating a build.
 
-| Projects-page step | Wait |
-|---|---|
-| Navigation or initial page readiness | Up to 45 seconds |
-| Visible search field | Up to 30 seconds |
-| Extra settling before entering the project name | Fixed 5 seconds |
-| Search entry, matching row, and opening that row | Up to 30 seconds per operation |
+A blank or invalid UID, an inaccessible project, or a redirect away from the requested project fails that entry. The script logs the result and opens the next selected project using its own UID. It does not automatically retry an entire export, which could request duplicate builds. Failed projects produce a nonzero exit status after all selected entries have been processed. Authentication or startup failures stop exports before the loop. Each project is logged with its position/total within the run, its original CSV position/total, and its enabled-list position.
 
-Search may return several projects. The script enters the CSV's unchanged `project_name` into the search field and matches it against each project link's `title` attribute, which contains the project name without its address or workspace text. Matching is case-sensitive, and all whitespace, including leading/trailing spaces, must match exactly. It opens the row only when exactly one project has that full name; partial-name results do not make the selection ambiguous. For example, searching for `cnu910` opens `cnu910` even if `ZZ CNU910-128725.00 - Hawkins Co. SR70, Slope Stabilization` also appears. If no exact match becomes visible within 30 seconds, or multiple rows have the exact same name, the project is marked **FAILED** without clicking a row. Disabled rows and enabled rows outside the selected range are excluded from the export run's project counts.
-
-The maximum waits finish early when their condition is met. Navigation/readiness and project-selection errors fail that project. The script logs the result and continues to the next selected project, which opens the landing page again. It does not automatically retry an entire export, which could request duplicate builds. Failed projects produce a nonzero exit status after all selected entries have been processed; authentication/startup failures still stop exports before the loop. These waits leave the authentication and Kahua timing rules unchanged.
-
-Build-progress logs include both `projectUid` and the actual `projectName`, alongside the percentage and status. The logger encloses `projectName` in double quotes, preserving spaces and escaping any quotes within the name, in both console and file output. This is display formatting only; the name used for search and matching is unchanged.
+Build-progress logs include both `projectUid` and the actual `projectName`, alongside the percentage and status. The logger encloses `projectName` in double quotes, preserving spaces and escaping any quotes within the name, in both console and file output.
 
 Download logs show **Clicking Download**, then **ZIP download started; saving to destination**. **As-built ZIP saved** appears only after saving finishes. If transfer or saving takes longer, status messages report elapsed minutes at **10, 20, 40, 80… minutes since the download click**, with gaps eventually capped at 24 hours. These messages are informational: they do not change the download, retry it, impose a transfer timeout, or affect build-progress polling. Updates stop when saving succeeds or the download operation fails.
 
@@ -215,7 +210,7 @@ The original flag syntax remains supported: `npm run export:chrome -- --skip 50 
 
 Alternatively, set `BATCH_SKIP` and `BATCH_LIMIT` globally in `.env` and run `npm run export:chrome` without arguments. A limit counts **attempted projects**, including failures. A batch of 50 can finish with 43 successes and 7 failures; the next batch still starts at skip 50. Disabled rows consume no slots. Selection and CSV validation happen before browser startup. Unknown arguments, invalid numbers, and invalid retry reports stop the command before browser startup. An empty range or a report with no failures creates an empty completed report and exits successfully without starting a browser.
 
-Every valid execution creates its own directory, including retries. For example:
+Every valid execution creates its own directory under `RUNS_DIR`, including retries. For example, with the default `runs` folder:
 
 ```text
 runs/
@@ -235,7 +230,7 @@ Folder names contain a UTC timestamp (`Z`), the run type, batch settings when ap
 project_uid,project_name,project_clean_name,excel_name,enabled,start_date,end_date,action,sheets_count,error
 ```
 
-The input header is captured before browser startup, so even an empty batch produces the same failure CSV header. If the input already has an `error` column, its old value is replaced and the column is moved to the end, without duplication. The new `error` cell contains only a predefined classification such as `PROJECT_NOT_FOUND`, `BUILD_FAILED`, or `DOWNLOAD_ERROR`. Missing or unrecognized classifications, including the internal `UNKNOWN_ERROR` value, appear as `UNKNOWN`; refer to JSON or logs for details. Error messages and Playwright call logs are never added to that column. Full error details remain in `results.json` and the existing run logs under `logs/`. JSON drives retry selection, and each retry's failure CSV reflects the current input CSV read at the start of that retry. Column rearrangement does not affect normal execution or retry matching; row order still determines batch offsets. This format applies to newly generated reports; existing run files are not rewritten. Generated reports are ignored by Git.
+The input header is captured before browser startup, so even an empty batch produces the same failure CSV header. If the input already has an `error` column, its old value is replaced and the column is moved to the end, without duplication. The new `error` cell contains only a predefined classification such as `PROJECT_NOT_FOUND`, `BUILD_FAILED`, or `DOWNLOAD_ERROR`. Missing or unrecognized classifications, including the internal `UNKNOWN_ERROR` value, appear as `UNKNOWN`; refer to JSON or logs for details. Error messages and Playwright call logs are never added to that column. Full error details remain in `results.json` and the existing run logs under `LOG_DIR`. JSON drives retry selection, and each retry's failure CSV reflects the current input CSV read at the start of that retry. Column rearrangement does not affect normal execution or retry matching; row order still determines batch offsets. This format applies to newly generated reports; existing run files are not rewritten. Generated reports are ignored by Git.
 
 To retry only failures from a chosen batch or retry run, pass its run ID:
 
@@ -243,7 +238,7 @@ To retry only failures from a chosen batch or retry run, pass its run ID:
 npm run export:chrome retry="<run-id>"
 ```
 
-A **run ID is the entire folder name directly inside `runs/`**. Copy it from that folder, the `runId` printed in the terminal, or the `runId` field inside that folder's `results.json`. Names containing `_batch_skip-..._limit-..._` identify batch executions; names containing `_retry_` identify retry executions. The script fills in `runs/<run-id>/results.json` automatically, so you do not need to type `runs/` or `/results.json`. Keep `retry=` together with its value; extra spaces between arguments are fine, but spaces around `=` are not supported.
+A **run ID is the entire folder name directly inside `RUNS_DIR`**. Copy it from that folder, the `runId` printed in the terminal, or the `runId` field inside that folder's `results.json`. Names containing `_batch_skip-..._limit-..._` identify batch executions; names containing `_retry_` identify retry executions. The script looks up a bare run ID in the current `RUNS_DIR` as `<RUNS_DIR>/<run-id>/results.json`. To retry a report from the previous folder after changing `RUNS_DIR`, pass its explicit path. Keep `retry=` together with its value; extra spaces between arguments are fine, but spaces around `=` are not supported.
 
 | What you want to rerun | Which ID to pass |
 | --- | --- |
@@ -272,7 +267,7 @@ The selected list is saved before browser startup. Each project is saved as `IN_
 
 ###### Report file access and recovery
 
-This applies to Chrome export, visible automated login, and headless export. Keep both files in the active `runs/<run-id>/` folder closed until execution finishes. The script does not make reports read-only or prevent other applications from opening them. Opening a file does not always lock it, but applications such as Excel can prevent Windows from replacing it. Do not edit or save active reports. Use the terminal or log file for live progress; if you need to inspect a report during execution, inspect a separate copy and leave the original closed.
+This applies to Chrome export, visible automated login, and headless export. Keep both files in the active `<RUNS_DIR>/<run-id>/` folder closed until execution finishes. The script does not make reports read-only or prevent other applications from opening them. Opening a file does not always lock it, but applications such as Excel can prevent Windows from replacing it. Do not edit or save active reports. Use the terminal or log file for live progress; if you need to inspect a report during execution, inspect a separate copy and leave the original closed.
 
 A lock or permission issue can produce an error such as:
 
@@ -372,7 +367,7 @@ A corrupt archive or extraction failure retains the previous output. If copying 
 
 Archives containing different files such as `9C.pdf` and `9c.pdf` in the same internal folder require a case-sensitive destination to retain both names. The command checks the filesystem through the existing ZIP's filename and reports both conflicting paths before extracting on a case-insensitive destination. Adding the extraction parent does not resolve such conflicts; use a case-sensitive download location and set `DOWNLOAD_DIR` accordingly to preserve these archives exactly.
 
-The command logs per-project results and a final `UNZIP SUMMARY` to the terminal and `logs/unzip-<timestamp>.log`. All three local commands (`unzip`, `sync:prepare`, and `drawing:prepare`) use the same project counts: `total`, `success`, `skipped`, and `failed`, with `skippedByReason` and the clean names of `failedProjects`. Each summary describes only its current command; earlier export or extraction errors are not carried forward.
+The command logs per-project results and a final `UNZIP SUMMARY` to the terminal and `<LOG_DIR>/unzip-<timestamp>.log`. All three local commands (`unzip`, `sync:prepare`, and `drawing:prepare`) use the same project counts: `total`, `success`, `skipped`, and `failed`, with `skippedByReason` and the clean names of `failedProjects`. Each summary describes only its current command; earlier export or extraction errors are not carried forward.
 
 For unzip, `success` means extracted, and skips are grouped as `DISABLED` or `MISSING_DOWNLOAD`. Missing downloads are logged as `[UNZIP_SKIP: MISSING_DOWNLOAD]` with extraction not attempted; actual extraction errors use `[UNZIP_ERROR: EXTRACTION_ERROR]`. Temporary `.export-download-*.zip` files are ignored. Skips do not cause a nonzero exit status, even if every project is skipped. Only failures or a startup/input-validation error do. Temporary-fixture tests are listed under [Validation commands](#validation-commands).
 
@@ -440,14 +435,14 @@ Override existing Documents and/or Photos folder contents? [y/N]
 
 Before copying a project, the command rechecks the destination paths targeted by the extraction. If a targeted file changed or appeared since the preview, the command reports the project as failed and continues. Each approved incoming file is staged before replacing its destination file. Links, special files, and file/directory type conflicts at targeted paths are rejected. If a copy fails, files already copied for that project may remain in place. The command exits with a nonzero status if any project fails.
 
-Logs are written to the terminal and `logs/sync-preparation-<timestamp>.log`. The final `SYNC PREPARATION SUMMARY` counts successful copies, skipped projects, and failures from this command only. `skippedByReason` distinguishes `DISABLED`, `MISSING_EXTRACTION`, `NO_MATCHING_FOLDER`, and `OVERWRITE_DECLINED`. `NO_MATCHING_FOLDER` means neither Documents nor Photos was found; it is SKIPPED and is not included in `failedProjects`. That list contains only actual failed projects and is empty when none failed. Missing source inputs and other skips do not cause a nonzero exit status; permission, validation, destination-setup, and copying errors remain failures. The default `sync_ups` contents are ignored by Git. Temporary-folder tests are listed under [Validation commands](#validation-commands).
+Logs are written to the terminal and `<LOG_DIR>/sync-preparation-<timestamp>.log`. The final `SYNC PREPARATION SUMMARY` counts successful copies, skipped projects, and failures from this command only. `skippedByReason` distinguishes `DISABLED`, `MISSING_EXTRACTION`, `NO_MATCHING_FOLDER`, and `OVERWRITE_DECLINED`. `NO_MATCHING_FOLDER` means neither Documents nor Photos was found; it is SKIPPED and is not included in `failedProjects`. That list contains only actual failed projects and is empty when none failed. Missing source inputs and other skips do not cause a nonzero exit status; permission, validation, destination-setup, and copying errors remain failures. The default `sync_ups` contents are ignored by Git. Temporary-folder tests are listed under [Validation commands](#validation-commands).
 
 ### Part A output
 
 - Input data: `PROJECTS_CSV` (default: `input/projects.csv`)
 - Downloaded ZIP files: `<DOWNLOAD_DIR>/<project_clean_name>/<project_clean_name>.zip`
-- Run logs: `logs/export-<timestamp>.log`
-- Export execution reports: `runs/<run-id>/results.json` and `runs/<run-id>/failed-projects.csv` (at the repository root, independent of `DOWNLOAD_DIR`)
+- Run logs: `<LOG_DIR>/export-<timestamp>.log`
+- Export execution reports: `<RUNS_DIR>/<run-id>/results.json` and `<RUNS_DIR>/<run-id>/failed-projects.csv`
 
 For example, `project_clean_name=Grainger_101410_01_ROW_Plans` produces `downloads/Grainger_101410_01_ROW_Plans/Grainger_101410_01_ROW_Plans.zip` with the default download directory. The ZIP filename supplied by PlanGrid is replaced with this configured name. Re-running the same project with the same clean name saves to the same path and can replace its previous ZIP.
 
@@ -465,7 +460,7 @@ Use the existing Chrome setup from Step 1. Keep Chrome signed in to PlanGrid, en
 
 The input is `input/grant_admin_access_projects.csv`. Each row uses `enterprise_project_url` for the Team page and `user_email_id` for the recipient. If the team is empty or the search confirms zero exact email matches, the script clears the search and opens **Add Team Members**. It verifies the recipient and **Admin** role, submits the invitation automatically in the signed-in Chrome session, reads PlanGrid's confirmation, clicks **Done**, and continues to the next selected project.
 
-After processing the selected projects, the command returns the Chrome tab to the organization Users page and disconnects. The final summary lists each project outcome first, followed by the totals. Logs are written to `logs/grant-admin-access-*.log`.
+After processing the selected projects, the command returns the Chrome tab to the organization Users page and disconnects. The final summary lists each project outcome first, followed by the totals. Logs are written to `<LOG_DIR>/grant-admin-access-*.log`.
 
 - `SUCCESS` means the Team table showed the new member with the Admin role after submission.
 - `SKIPPED` means the exact email already had the Admin role.
@@ -502,7 +497,7 @@ Full drawings refresh runs without an overwrite confirmation, including when des
 
 If copying the replacement fails, the command attempts to restore all previous contents from the backup. A failed first publication removes its incomplete new project folder when possible. If restoration fails, it retains and reports the recovery backup path. Locks or permissions can still block deletion, copying, restoration, or temporary cleanup; each such failure is reported and marks that project FAILED. Links, special files, overlapping source/destination trees, and destination changes during staging are rejected before refreshing. Previous file/directory layouts are replaced with the current source layout. Disabled projects, missing sources, and projects with no eligible contents remain SKIPPED and leave previous output unchanged. Failures do not stop later projects, but cause a nonzero exit status.
 
-Logs are written to `logs/drawings-preparation-<timestamp>.log` and the terminal. The final `DRAWINGS PREPARATION SUMMARY` reports this command's `success`, `skipped`, and `failed` project counts. `skippedByReason` distinguishes `DISABLED`, `MISSING_EXTRACTION`, and `NO_MATCHING_CONTENT`. Success means the full refresh and temporary cleanup completed. Missing source inputs and other skips do not cause a nonzero exit status; failed required steps do. Generated contents in the default `drawings/` folder are ignored by Git. This copy is separate from Part B's drawing-version import preparation.
+Logs are written to `<LOG_DIR>/drawings-preparation-<timestamp>.log` and the terminal. The final `DRAWINGS PREPARATION SUMMARY` reports this command's `success`, `skipped`, and `failed` project counts. `skippedByReason` distinguishes `DISABLED`, `MISSING_EXTRACTION`, and `NO_MATCHING_CONTENT`. Success means the full refresh and temporary cleanup completed. Missing source inputs and other skips do not cause a nonzero exit status; failed required steps do. Generated contents in the default `drawings/` folder are ignored by Git. This copy is separate from Part B's drawing-version import preparation.
 
 ### Normal automated login
 
@@ -560,7 +555,7 @@ Before browser startup, `npm run export` validates the CSV selected by `PROJECTS
 3. If Autodesk skips the password step, the script waits for the PlanGrid projects landing page.
 4. If Autodesk shows a password field, the script fills the password and clicks **Sign in**.
 5. **[Manual action — see “Autodesk OTP and CAPTCHA” below](#autodesk-otp-and-captcha):** If CAPTCHA, OTP, or verification appears, the script pauses. Complete it in the browser, submit it, wait for the PlanGrid projects page and project search box, and click **Resume** in the Playwright window.
-6. After authentication, the script searches by exact project name and processes the selected projects, persisting each outcome.
+6. After authentication, the script opens each selected project by its `project_uid` and persists each outcome.
 7. For each project, it opens Settings → Download and Export As-Builts, snapshots all previous build IDs, and generates a fresh export without waiting for older builds, clicking **Generate a new As-built** when previous builds exist. It uses the provided dates when present, unchecks **Current Set**, **Drawing Log**, and **Current Set Log** when present, checks every other Include option, verifies the final states, and clicks **Zip File**. It requires exactly one new build ID, then polls that specific build until `100%` with a visible Download link and saves its ZIP. Ambiguous identities or explicit failure statuses fail that project and allow the loop to continue. Logs identify the build ID, each form/table page, the first-time/recurring path, and the verified checkbox settings.
 8. After the project loop, it returns to the projects page, attempts to log out, and verifies the login page.
 9. The script pauses one final time for manual verification. Use the same **Resume** play button after checking the session and logging out if necessary; the browser then closes.
@@ -579,7 +574,7 @@ When this happens, the automation does not try to solve or bypass the challenge:
 4. Wait until the browser reaches the PlanGrid projects landing page and the project search box is visible.
 5. Click the **Resume** button in the Playwright window that opened with the browser.
 
-The script verifies the projects page and search box after Resume. If Autodesk is still showing CAPTCHA or verification, it stops with a clear authentication error instead of starting the export and failing later during project search.
+The script verifies the projects page and search box after Resume. If Autodesk is still showing CAPTCHA or verification, it stops with a clear authentication error before starting project exports.
 
 The automation will then continue with the project exports. If Autodesk signs in directly without OTP, it continues automatically.
 
@@ -594,7 +589,7 @@ npm run test:drawings
 npm run test:import
 ```
 
-These checks use local tests and temporary fixtures; they do not launch a real login/export run or copy your downloaded projects. Run the checks relevant to your changes. `test:export` checks attached-Chrome authentication readiness without Inspector pauses (including delayed search rendering and expired sessions), batch argument validation and precedence, enabled-only offsets, exact name preservation, timestamped reports, per-project persistence, retry chains and source-report preservation, missing/disabled retry records, unfinished-run states, report-write failures, CSV parsing, exact project-name selection among similar results, missing/duplicate exact-name failures, and simulated first-time/recurring export requests, checkbox verification, whole-table ID snapshots (including processing builds), ambiguity rejection, stable-ID polling despite reordered rows, conservative status handling, rejection of older downloads, initial-page reuse and readiness waits, recovery after project failures, error labels and summary counts, download naming, failed-download cleanup and preservation of previous output, and transfer-status scheduling/cleanup with a simulated clock; `test:unzip` checks extraction; `test:sync` checks Documents/Photos copying; `test:drawings` checks copying everything else; `test:import` checks Part B local preparation.
+These checks use local tests and temporary fixtures; they do not launch a real login/export run or copy your downloaded projects. Run the checks relevant to your changes. `test:export` checks attached-Chrome authentication readiness without Inspector pauses (including delayed search rendering and expired sessions), batch argument validation and precedence, enabled-only offsets, exact name preservation, timestamped reports, per-project persistence, retry chains and source-report preservation, missing/disabled retry records, unfinished-run states, report-write failures, CSV parsing, direct navigation using CSV project UIDs, invalid UIDs and redirected pages, and simulated first-time/recurring export requests, checkbox verification, whole-table ID snapshots (including processing builds), ambiguity rejection, stable-ID polling despite reordered rows, conservative status handling, rejection of older downloads, project home readiness waits, recovery after project failures, error labels and summary counts, download naming, failed-download cleanup and preservation of previous output, and transfer-status scheduling/cleanup with a simulated clock; `test:unzip` checks extraction; `test:sync` checks Documents/Photos copying; `test:drawings` checks copying everything else; `test:import` checks Part B local preparation.
 
 ### Part B — Kahua import (in development)
 
@@ -641,7 +636,7 @@ Each run creates:
     3/
 ```
 
-Run logs are written to `logs/import-preparation-<timestamp>.log`. Failed runs exit with a nonzero status and may leave a partial preparation directory for inspection, without an `import-plan.json`. Each run creates a new copy of the selected drawings, so it needs additional disk space. Existing ZIPs, manually extracted files, and earlier preparation runs are preserved.
+Run logs are written to `<LOG_DIR>/import-preparation-<timestamp>.log`. Failed runs exit with a nonzero status and may leave a partial preparation directory for inspection, without an `import-plan.json`. Each run creates a new copy of the selected drawings, so it needs additional disk space. Existing ZIPs, manually extracted files, and earlier preparation runs are preserved.
 
 Portal login, uploads, portal processing, and multiple-project iteration will be added in later steps.
 
@@ -673,4 +668,4 @@ After the password step, the workflow waits for either the authenticated navigat
 
 The workflow then pauses with Playwright Inspector on the authenticated landing page. Turn on **Record**, perform the next actions manually, and copy the generated code before clicking **Resume**. Because the visible application is canvas-rendered, the recorder may emit `#uno-canvas` coordinate clicks. Those lines still document the interaction sequence; replace coordinates with stable semantic controls such as `xamlautomationid` attributes as each step is implemented.
 
-Logs use `logs/kahua-import-<timestamp>.log`. Later project navigation and upload actions will be added on top of this verified login flow.
+Logs use `<LOG_DIR>/kahua-import-<timestamp>.log`. Later project navigation and upload actions will be added on top of this verified login flow.
