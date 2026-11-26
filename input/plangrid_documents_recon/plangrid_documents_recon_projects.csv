@@ -1,0 +1,134 @@
+project_uid,project_name,project_clean_name,enabled,start_date,end_date,migration_reference_status
+eb579966-cf89-4422-b8e6-71f4ce3ca105,CMGC06 - PIN 124437.00-I-275 Over Bernard - Knox,CMGC06 - PIN 124437.00-I-275 Over Bernard - Knox,TRUE,2000-01-01,,toMig1113
+9e8751fe-0efa-41a4-a178-df4eb31006d3,*CNV121 - PIN 130478.00 - Jackson - Resurfacing SR 56,_CNV121 - PIN 130478.00 - Jackson - Resurfacing SR 56,TRUE,2000-01-01,,toMig_1122
+7a656b02-e9d7-403c-9847-60e1cae3582f,*CNY011 - PIN 131779.00 - Meigs County - Resurfacing SR 68,_CNY011 - PIN 131779.00 - Meigs County - Resurfacing SR 68,TRUE,2000-01-01,,toMig_1123
+75df9fb4-43b7-41a9-9214-620962004796,CNX298 - 132473.00 - Shelby,CNX298 - 132473.00 - Shelby,TRUE,2000-01-01,,toMig_1123
+69c8d378-99a8-4396-b632-a912bdbe8d10,CNX287 - 131902.00 - Fayette,CNX287 - 131902.00 - Fayette,TRUE,2000-01-01,,toMig_1123
+5e590d2b-aafe-41cf-afe0-8f20abedb0e8,*CNX237 - PIN 129551.00 - Franklin County - US41A(SR5) - Resurfacing,_CNX237 - PIN 129551.00 - Franklin County - US41A(SR5) - Resurfacing,TRUE,2000-01-01,,toMig_1123
+e05730c0-23ff-4042-a5ea-78305dd546c1,CNV126 - PIN 129255.00 - Fentress - Resurfacing SR 62 - Archive,CNV126 - PIN 129255.00 - Fentress - Resurfacing SR 62 - Archive,TRUE,2000-01-01,,toMig_1123
+fa200da0-aaaa-4255-a7a3-cc353ecfac8a,CNX126 - PIN 132864.00 - Overton - Beech Road Resurfacing,CNX126 - PIN 132864.00 - Overton - Beech Road Resurfacing,TRUE,2000-01-01,,toMig_1123
+08d943a1-b717-4a89-8fe6-7d8f8968f1bf,CNX159 - PIN 129533.00 - Cumberland - US 70 Resurfacing,CNX159 - PIN 129533.00 - Cumberland - US 70 Resurfacing,TRUE,2000-01-01,,toMig_1123
+eadf2fdd-2c76-4343-928e-299b10faf3d5,CNX115 - PIN 128394.01 - Van Buren - Fall Creek Falls Resurfacing Scenic Loop Rd,CNX115 - PIN 128394.01 - Van Buren - Fall Creek Falls Resurfacing Scenic Loop Rd,TRUE,2000-01-01,,toMig_1123
+bdd22e7e-c8e1-4dae-adad-a6f7947c399c,CNV087 - PIN 129672.00 - Hamilton - Resurfacing SR 312,CNV087 - PIN 129672.00 - Hamilton - Resurfacing SR 312,TRUE,2000-01-01,,toMig_1123
+478d89a6-e8d0-2013-3f6b-725726a2b042,CNV909,CNV909,TRUE,2000-01-01,,toMig_1123
+6f89dc4f-b591-ef25-c975-5b793368ff9d,CNV182 - PIN 129624 - Rhea - US 27 (SR 29) Resurfacing,CNV182 - PIN 129624 - Rhea - US 27 (SR 29) Resurfacing,TRUE,2000-01-01,,toMig_1123
+2135a383-9fc0-4686-9bc6-0567fb773251,CNV105 - PIN 127223.00 - Warren - Resurfacing SR 8,CNV105 - PIN 127223.00 - Warren - Resurfacing SR 8,TRUE,2000-01-01,,toMig_1123
+72b580cd-9bc0-4bb8-8b6c-45f86ecb033c,*CNX242 - PIN 129614.00 - Coffee County - SR53 - Resurfacing,_CNX242 - PIN 129614.00 - Coffee County - SR53 - Resurfacing,TRUE,2000-01-01,,toMig_1123
+ac5d7f58-ce8f-46f4-816f-77f5fcfeb03c,CNX249 - 127391.00- Haywood Co.,CNX249 - 127391.00- Haywood Co,TRUE,2000-01-01,,toMig_1124
+25b34687-feb4-44d1-a5bb-521ccc3a27df,CNX289- 133168.00 - Lauderdale,CNX289- 133168.00 - Lauderdale,TRUE,2000-01-01,,toMig_1124
+f005cd41-7b97-47d8-a254-761a0b1f9cff,CNX374 - 127351.00 - Shelby Co.,CNX374 - 127351.00 - Shelby Co,TRUE,2000-01-01,,toMig_1124
+b14527d4-9b90-4aea-914f-503bbc07d9ff,*CNX243 - PIN 130548.00 - Meigs County - SR304 - Resurfacing,_CNX243 - PIN 130548.00 - Meigs County - SR304 - Resurfacing,TRUE,2000-01-01,,toMig_1124
+62394639-96b8-4a52-ab43-38f51af3a0ff,"CNX125 - PIN 132879.00, 132880.00 - White - Resurfacing SR 111","CNX125 - PIN 132879.00, 132880.00 - White - Resurfacing SR 111",TRUE,2000-01-01,,toMig_1124
+dc8a183d-f90d-47ed-9a35-b6e85e0499d7,CNX290 - 127360.00 - Lauderdale Co.,CNX290 - 127360.00 - Lauderdale Co,TRUE,2000-01-01,,toMig_1124
+b3f66094-a1e3-4963-99e4-805bf36b82b1,CNW327 - 131379.00- Lauderdale Co.,CNW327 - 131379.00- Lauderdale Co,TRUE,2000-01-01,,toMig_1124
+561f5197-2845-45ad-b885-7a40db91385d,CNX218 - 127347.01 - GIBSON,CNX218 - 127347.01 - GIBSON,TRUE,2000-01-01,,toMig_1124
+9a9f371e-f09f-4c01-91f4-29d85fae4fb4,"*CNX181 - PIN 123508.01, 123508.02 - Hamilton - Harrison Bay State Park","_CNX181 - PIN 123508.01, 123508.02 - Hamilton - Harrison Bay State Park",TRUE,2000-01-01,,toMig_1124
+4d2f336d-aa07-4f5b-82c3-9eef6e73c727,"*CNX179 - PIN 129654.00, 127218.01 - Marion - US 72 & SR 156 Resurfacing","_CNX179 - PIN 129654.00, 127218.01 - Marion - US 72 & SR 156 Resurfacing",TRUE,2000-01-01,,toMig_1124
+f7d1e215-b691-4732-ae0d-aba76cd676d7,CNY010 - PIN 129634.00 - Cumberland County - Resurfacing SR 101,CNY010 - PIN 129634.00 - Cumberland County - Resurfacing SR 101,TRUE,2000-01-01,,toMig_1124
+2927c245-5be6-4921-8739-970593aceac6,CNV152 - PIN 127164.00 - Fentress - US 127 (SR 28 & 154) Resurfacing,CNV152 - PIN 127164.00 - Fentress - US 127 (SR 28 & 154) Resurfacing,TRUE,2000-01-01,,toMig_1124
+6d572659-efcc-4fc5-a673-8148250c7500,*CNX238 - PIN 127232.00 - Hamilton County - US27(SR29) - Resurfacing,_CNX238 - PIN 127232.00 - Hamilton County - US27(SR29) - Resurfacing,TRUE,2000-01-01,,toMig_1124
+83d7cd7e-0bee-40c1-b42f-e3a94feb85a1,CNX250 - 132477.00 - Haywood,CNX250 - 132477.00 - Haywood,TRUE,2000-01-01,,toMig_1124
+7bccb39e-6b6b-4157-bd41-f1b868708231,CNW193 - PINs 129642.00 & 129643.00 - Fentress - US127 (SR28) Resurfacing,CNW193 - PINs 129642.00 & 129643.00 - Fentress - US127 (SR28) Resurfacing,TRUE,2000-01-01,,toMig_1124
+c3e628e1-ebfa-4016-8323-15000d3cac8d,"CNX153 - PIN130541.00, 130542.00 - Fentress & Pickett - US 127 Resurfacing","CNX153 - PIN130541.00, 130542.00 - Fentress & Pickett - US 127 Resurfacing",TRUE,2000-01-01,,toMig_1124
+dca552a0-e65a-4397-a647-c1660ddcdb65,CNW182 - PINs 129593.00 & 129594.00 - Fentress - SR85 & US127(SR28) Resurfacing,CNW182 - PINs 129593.00 & 129594.00 - Fentress - SR85 & US127(SR28) Resurfacing,TRUE,2000-01-01,,toMig_1124
+587fbd15-eb0d-4998-aee5-256d8d91f31c,CNX284 - 133674.00 - Dyer Co.,CNX284 - 133674.00 - Dyer Co,TRUE,2000-01-01,,toMig_1124
+100061be-8ce8-4989-99f6-faa99ee5b9e6,CNX290 - 131915.00 - Lauderdale Co.,CNX290 - 131915.00 - Lauderdale Co,TRUE,2000-01-01,,toMig_1125
+e1f82360-ea4d-45a0-869f-c5770c7d45ef,"CNX123 - PIN 132873.00, 129265.00 - Warren - Resurfacing US 70 & SR 288","CNX123 - PIN 132873.00, 129265.00 - Warren - Resurfacing US 70 & SR 288",TRUE,2000-01-01,,toMig_1125
+d6332b75-9e85-49eb-a4b8-6f6349a60353,CNX218 - 123895.00 - Gibson,CNX218 - 123895.00 - Gibson,TRUE,2000-01-01,,toMig_1125
+f0c5ab2d-9c45-4fd9-9348-6f47e9856044,*CNX073- PIN 131406.00 - Meigs - SR58 - Safety Improvements,_CNX073- PIN 131406.00 - Meigs - SR58 - Safety Improvements,TRUE,2000-01-01,,toMig_1125
+6506f2e9-a829-4e86-afbb-3b92b82f2f15,"*CNX132 - PIN 127227.00 - Bradley - US11 (US64, SR2) - Resurfacing","_CNX132 - PIN 127227.00 - Bradley - US11 (US64, SR2) - Resurfacing",TRUE,2000-01-01,,toMig_1125
+4db1823d-b539-455e-aa3f-2075115b2c22,*CNX015 - PIN: 127216.00 - Bledsoe - SR101 - Micro/Thin Mix Overlay Resurfacing,_CNX015 - PIN_ 127216.00 - Bledsoe - SR101 - Micro_Thin Mix Overlay Resurfacing,TRUE,2000-01-01,,toMig_1125
+c278f870-88d2-45fb-8cce-861bb5f2d849,"CNX180 - PIN 124939.00, 132863.00, 132861.00 - Overton - Resurfacing SR 52, SR 11, SR 294","CNX180 - PIN 124939.00, 132863.00, 132861.00 - Overton - Resurfacing SR 52, SR 11, SR 294",TRUE,2000-01-01,,toMig_1125
+7a2306ce-8e87-2cae-bf33-4425ba95f1fe,CNV181 - PIN 129639.00 & 130481.00 - Overton - SR 111 & SR 52 Resurfacing,CNV181 - PIN 129639.00 & 130481.00 - Overton - SR 111 & SR 52 Resurfacing,TRUE,2000-01-01,,toMig_1125
+5bde176f-36bd-4caa-b7ee-07d3cdfbf61a,CNW201 - PINs 129522.00 & 129587.00 - Cumberland - US127 (SR28) & US70 (SR1) Resurfacing,CNW201 - PINs 129522.00 & 129587.00 - Cumberland - US127 (SR28) & US70 (SR1) Resurfacing,TRUE,2000-01-01,,toMig_1125
+77f88974-0702-499d-9831-cccd49b94f94,"CNX039 - PIN 129521.00, 129542.00, 127159.00 - Cumberland, White - US70 (SR1) - Micro/Thin Mix Overlay Resurfacing","CNX039 - PIN 129521.00, 129542.00, 127159.00 - Cumberland, White - US70 (SR1) - Micro_Thin Mix Overlay Resurfacing",TRUE,2000-01-01,,toMig_1125
+44416cdc-77b4-4232-9cd8-6ae927d50845,CNW233 - PIN 127882.01 (SR111) & PIN 129540.00 (SR1) - White - Resurfacing US70,CNW233 - PIN 127882.01 (SR111) & PIN 129540.00 (SR1) - White - Resurfacing US70,TRUE,2000-01-01,,toMig_1125
+86788ddb-cd4e-c081-620a-a16f743e8dd7,CNV174 - PIN 130476.00 & PIN 130479.00 - Marion & Sequatchie - SR 27 & SR 8(SR 111) Resurfacing,CNV174 - PIN 130476.00 & PIN 130479.00 - Marion & Sequatchie - SR 27 & SR 8(SR 111) Resurfacing,TRUE,2000-01-01,,toMig_1125
+854b6df5-c425-43de-b42f-0a813747cf92,CNV231 - PIN129589.00 - PUTNAM - SR290 Resurfacing,CNV231 - PIN129589.00 - PUTNAM - SR290 Resurfacing,TRUE,2000-01-01,,toMig_1126
+939db046-337d-4050-8c70-d98b7048a46a,CNW325 - PIN 131407.00 - Putnam - SR 135 Safety Improvements,CNW325 - PIN 131407.00 - Putnam - SR 135 Safety Improvements,TRUE,2000-01-01,,toMig_1126
+ee5fe561-2138-41b9-abb3-32660ccc2a6d,CNX117 - PIN 129657.00 - Grundy County - SR 50 Resurfacing,CNX117 - PIN 129657.00 - Grundy County - SR 50 Resurfacing,TRUE,2000-01-01,,toMig_1126
+e857c469-cd72-4576-8362-741204bbab9d,"CNX189 - PIN 129531.00, 129635.00 - Cumberland County - SR 298 & SR 392 Resurfacing","CNX189 - PIN 129531.00, 129635.00 - Cumberland County - SR 298 & SR 392 Resurfacing",TRUE,2000-01-01,,toMig_1126
+51d4a9c3-5324-473e-9c22-412de5f0a686,*CNX156 - PIN 132871.00 - Sequatchie - SR 8 Resurfacing,_CNX156 - PIN 132871.00 - Sequatchie - SR 8 Resurfacing,TRUE,2000-01-01,,toMig_1126
+d9de2107-19c4-46c9-883f-ac548ee69cb7,*CNX020 - PIN: 128859.00 - Coffee - I24 Resurfacing (Cheatum Springs Rd to US41(SR2)),_CNX020 - PIN_ 128859.00 - Coffee - I24 Resurfacing (Cheatum Springs Rd to US41(SR2)),TRUE,2000-01-01,,toMig_1126
+9da1f808-2d2f-4997-acae-93010093c184,CNX907 - 131914.00 - LAUDERDALE,CNX907 - 131914.00 - LAUDERDALE,TRUE,2000-01-01,,toMig_1127
+cb0d5471-0466-4a74-8b42-7d0f584d4b7c,CNX378 - 129079.00 - Dyer Co.,CNX378 - 129079.00 - Dyer Co,TRUE,2000-01-01,,toMig_1127
+66bf9f31-14dc-4611-a2d7-197037003de4,CNX068 - PIN 123509.00 - Cumberland - I40 - Resurfacing (East of US70(SR1) to Ozone Bridges),CNX068 - PIN 123509.00 - Cumberland - I40 - Resurfacing (East of US70(SR1) to Ozone Bridges),TRUE,2000-01-01,,toMig_1127
+d0253f2d-9070-47e3-8636-f4f8b61a7964,CNV155 - PINs 129622.00 (US 11) & 129623.00 (US 41) - Hamilton - Resurfacing,CNV155 - PINs 129622.00 (US 11) & 129623.00 (US 41) - Hamilton - Resurfacing,TRUE,2000-01-01,,toMig_1127
+b2183ca5-be6f-4c7e-88ac-aed69e041191,*CNX403 - PIN 132592.00 - Marion County - I-24 Resurfacing,_CNX403 - PIN 132592.00 - Marion County - I-24 Resurfacing,TRUE,2000-01-01,,toMig_1127
+219fcb5f-1476-4568-8636-d548d7f48be1,*CNW229 - PIN 131370.00 - Cannon - Install flashing beacon US 70S,_CNW229 - PIN 131370.00 - Cannon - Install flashing beacon US 70S,TRUE,2000-01-01,,toMig_1127
+990eb234-6fa3-4407-8415-50200c922a02,CNV122 - PINs 129599.00 & 129598.00 - Putnam - Microsurfacing SR 111,CNV122 - PINs 129599.00 & 129598.00 - Putnam - Microsurfacing SR 111,TRUE,2000-01-01,,toMig_1127
+3deaea58-cc76-4dc4-aa97-988f8b8f8756,"CNX036 - PIN 129529.00, 132845.00, 132846.00, 132847.00 - DeKalb - SR53/SR83/SR96/SR141 - Micro/Thin Mix Overlay Resurfacing","CNX036 - PIN 129529.00, 132845.00, 132846.00, 132847.00 - DeKalb - SR53_SR83_SR96_SR141 - Micro_Thin Mix Overlay Resurfacing",TRUE,2000-01-01,,toMig_1127
+15d39293-4827-48a7-b4e2-8ab98886eccf,CNX128 - PIN 129535.00 - Putnam - Resurfacing SR 111,CNX128 - PIN 129535.00 - Putnam - Resurfacing SR 111,TRUE,2000-01-01,,toMig_1127
+9482c6e4-7ef4-419e-aa06-bd12c8ee205b,"CNX231 - PIN 129632.00, 132848.00, 129633.00 - Dekalb County - SR56, Old SR56, SR146 - Resurfacing","CNX231 - PIN 129632.00, 132848.00, 129633.00 - Dekalb County - SR56, Old SR56, SR146 - Resurfacing",TRUE,2000-01-01,,toMig_1127
+2cd9afd1-8e76-4dc0-8152-1e667792d13b,CNX244 - PIN 129541.00 - Putnam County - SR96 - Resurfacing,CNX244 - PIN 129541.00 - Putnam County - SR96 - Resurfacing,TRUE,2000-01-01,,toMig_1127
+6934ba9b-4752-4bb7-9bb8-fba6c04817ec,CNX111 - PIN 132538.00 - Jackson County - SR85 - Bridge Repair (Indian Creek),CNX111 - PIN 132538.00 - Jackson County - SR85 - Bridge Repair (Indian Creek),TRUE,2000-01-01,,toMig_1127
+0b0dc387-5087-44b1-853a-deaa77888d4d,CNW352 - PIN132361.00 - Clay - Bridge repair SR 52 over Trace Creek,CNW352 - PIN132361.00 - Clay - Bridge repair SR 52 over Trace Creek,TRUE,2000-01-01,,toMig_1127
+0a639a2c-9369-4c70-8fc3-b69e0ea3723e,*CNX236 - PIN 132872.00 - VanBuren County - SR285 - Resurfacing,_CNX236 - PIN 132872.00 - VanBuren County - SR285 - Resurfacing,TRUE,2000-01-01,,toMig_1127
+4ecc60ed-3c02-43cd-8ccc-13eadf603811,*CNX219 - PIN 130547.00 - Rhea County - US 27(SR29) - Resurfacing,_CNX219 - PIN 130547.00 - Rhea County - US 27(SR29) - Resurfacing,TRUE,2000-01-01,,toMig_1127
+33087122-ee93-4ec5-a1cc-427c55b7b88b,CNY028 - 131120.00 - Haywood Co.,CNY028 - 131120.00 - Haywood Co,TRUE,2000-01-01,,toMig_1127
+093b40a4-fe9a-4a05-af2e-ba868a8f004e,*CNW371 - PIN 106476.00 - Grundy - TDOT Maintenance bldg,_CNW371 - PIN 106476.00 - Grundy - TDOT Maintenance bldg,TRUE,2000-01-01,,toMig_1127
+24faf822-3c2c-4a9c-af0e-aa19a5807bde,CNX037 - 046531.01 - Shelby,CNX037 - 046531.01 - Shelby,TRUE,2000-01-01,,toMig_1127
+f8880613-9490-4b56-b9c3-b1d2e9f9d32e,CNW237 - PIN 130884.01 - Cumberland - US127S Bridge Repair over Little Obed,CNW237 - PIN 130884.01 - Cumberland - US127S Bridge Repair over Little Obed,TRUE,2000-01-01,,toMig_1128
+24499816-8679-446a-83b4-2f9e1b531d9a,CNW325 - PIN 131408.00 - Putnam - SR 135 & SR 136 Battery Backup Systems,CNW325 - PIN 131408.00 - Putnam - SR 135 & SR 136 Battery Backup Systems,TRUE,2000-01-01,,toMig_1128
+d7d7a898-7d9b-4704-9edc-42e39b4ba7cf,"CNV106 - PINs 129596.00, 129597.00, & 129595.00 - Putnam & White - Resurfacing SR 135 & SR 136","CNV106 - PINs 129596.00, 129597.00, & 129595.00 - Putnam & White - Resurfacing SR 135 & SR 136",TRUE,2000-01-01,,toMig_1128
+5071b8bc-74ad-4245-a372-77e80c453c1b,CNW377 - 128925.00 - Haywood Co.,CNW377 - 128925.00 - Haywood Co,TRUE,2000-01-01,,toMig_1128
+43b651ec-eb91-47c7-bba2-f4decff7c1dd,*CNX210 - PIN 128766.01 - Hamilton - SR 153 Slope Stabilization,_CNX210 - PIN 128766.01 - Hamilton - SR 153 Slope Stabilization,TRUE,2000-01-01,,toMig_1128
+b8723409-079c-4981-b629-b07d1e8ff330,"*CNX408 - PIN 131703.00 - Hamilton, Meigs - SR 60 drainage structure","_CNX408 - PIN 131703.00 - Hamilton, Meigs - SR 60 drainage structure",TRUE,2000-01-01,,toMig_1128
+5b0f6a03-b287-4636-b211-43435e50e4fb,*CNX344 - PIN 130868.01 - Hamilton County - SR111 - Culvert Replacement,_CNX344 - PIN 130868.01 - Hamilton County - SR111 - Culvert Replacement,TRUE,2000-01-01,,toMig_1128
+a3640be0-356c-45d3-869b-5c102432e1b8,CNX246 - 118660.00 - Shelby Co.,CNX246 - 118660.00 - Shelby Co,TRUE,2000-01-01,,toMig_1128
+ea553f5a-7f5a-4116-96c2-793792015b50,*CNX412 - PIN 132347.00 - Coffee County - SR 55 bridge repair over Little Duck River,_CNX412 - PIN 132347.00 - Coffee County - SR 55 bridge repair over Little Duck River,TRUE,2000-01-01,,toMig_1129
+6a8004d3-beea-4eef-99c5-c328f69cca7f,*CNW917 - PIN: 126897.00 - Grundy - U.S. 41A (S.R. 15) Monteagle Pedestrian Facilities,_CNW917 - PIN_ 126897.00 - Grundy - U.S. 41A (S.R. 15) Monteagle Pedestrian Facilities,TRUE,2000-01-01,,toMig_1129
+baa1b84c-3601-4593-8aff-fc767a492b14,*CNX041- PIN 132170.00 - Marion - US72 (SR27) - Bridge Repair (Battle Creek),_CNX041- PIN 132170.00 - Marion - US72 (SR27) - Bridge Repair (Battle Creek),TRUE,2000-01-01,,toMig_1129
+f8d4ef5d-365f-46b3-b1e1-40bfcd822618,CNW387 - 132466.00 - Fayette/Shelby Co.,CNW387 - 132466.00 - Fayette_Shelby Co,TRUE,2000-01-01,,toMig_1129
+8afede80-a056-49f2-9a0c-3050b22e9563,CNW341 - 120403.00 - Tipton,CNW341 - 120403.00 - Tipton,TRUE,2000-01-01,,toMig_1129
+063a622e-ff6b-4c07-b69e-dc2aa955c553,CNX029 - 123252.01 - Dyer,CNX029 - 123252.01 - Dyer,TRUE,2000-01-01,,toMig_1129
+b2fbf6f0-2295-41c6-84b2-80f338fe169a,CNW133 - 126602.00 - Fayette,CNW133 - 126602.00 - Fayette,TRUE,2000-01-01,,toMig_1130
+7afba8b6-5146-41e3-a507-c0b6205c31ca,CNX315-132283-01-Bedford,CNX315-132283-01-Bedford,TRUE,2000-01-01,,toMig_1130
+0404d53a-1c1c-46fd-a530-cf8de611c6cf,*CNW912 - PIN 124012.00 - Bradley - Tunnel Hill Rd. (Black Fox Creek) Bridge Replacement,_CNW912 - PIN 124012.00 - Bradley - Tunnel Hill Rd. (Black Fox Creek) Bridge Replacement,TRUE,2000-01-01,,toMig_1130
+d8f89f6f-7a50-46e0-bee2-0daa26482dcb,*CNV912 - PINs 126176.00 (Site 5)- Marion - Rockfall Mitigation,_CNV912 - PINs 126176.00 (Site 5)- Marion - Rockfall Mitigation,TRUE,2000-01-01,,toMig_1130
+9a9594de-862b-4b4b-989f-bbfd1cd21445,CNV901 - PIN 123178.00 - Marion County - Final Payment,CNV901 - PIN 123178.00 - Marion County - Final Payment,TRUE,2000-01-01,,toMig_1130
+eb67905e-792a-47cb-9e0f-cb9280abb5fa,CNV098 - PIN 126947.00 - Putnam County - US 70 (SR 24) at SR 56 in Baxter,CNV098 - PIN 126947.00 - Putnam County - US 70 (SR 24) at SR 56 in Baxter,TRUE,2000-01-01,,toMig_1131
+edd5b4e8-af6b-4c69-9c4c-343d91b210e2,CNX406 - PIN 126749.00 - Jackson County - SR 135 Rockfall Mitigation,CNX406 - PIN 126749.00 - Jackson County - SR 135 Rockfall Mitigation,TRUE,2000-01-01,,toMig_1131
+28259733-34fa-4cc7-9537-01edf137a89b,CNX228-124319-00-Giles,CNX228-124319-00-Giles,TRUE,2000-01-01,,toMig_1131
+c0828487-c424-4de3-a6e5-0a7947ddf780,CNX901 - 083453.01 - Shelby,CNX901 - 083453.01 - Shelby,TRUE,2000-01-01,,toMig_1132
+b0fada2c-4af9-4ca3-86c8-8e56532f02f7,"*CNW075-129679-00 - Knox Co, I-640 Rehab","_CNW075-129679-00 - Knox Co, I-640 Rehab",TRUE,2000-01-01,,toMig_1132
+a255cda2-1afa-4b8f-9966-bb79151c7afd,CNV183 - 101343.01 - Obion,CNV183 - 101343.01 - Obion,TRUE,2000-01-01,,toMig_1132
+28ae0f2e-56d5-46c9-bcdf-3d666c5d4675,*CNX188 - PIN 130129.00 - Bledsoe County - SIA - Project Protein,_CNX188 - PIN 130129.00 - Bledsoe County - SIA - Project Protein,TRUE,2000-01-01,,toMig_1133
+e198cdab-c30b-40d2-9b86-c8996cc26ab8,*CNX346 - PIN 124085.00 - Marion County - Orme Rd - Bridge Construction (Dry Creek),_CNX346 - PIN 124085.00 - Marion County - Orme Rd - Bridge Construction (Dry Creek),TRUE,2000-01-01,,toMig_1133
+e495cf37-9588-4967-8a09-8c95250a4eb3,CNU316 - PIN 118486.00 - Coffee County,CNU316 - PIN 118486.00 - Coffee County,TRUE,2000-01-01,,toMig_1134
+e39eb134-ccce-4640-b771-9861311ee7f9,*CNV912 - PINs 125257.00 (Site 2) - Marion - Rockfall Mitigation,_CNV912 - PINs 125257.00 (Site 2) - Marion - Rockfall Mitigation,TRUE,2000-01-01,,toMig_1134
+91c29a1b-796e-41f0-92ab-e702a8d04ff7,"*CNX206-123826.00 - Sevier Co, Grassy Branch Rd over Middle Prong of Little Pigeon River","_CNX206-123826.00 - Sevier Co, Grassy Branch Rd over Middle Prong of Little Pigeon River",TRUE,2000-01-01,,toMig_1134
+8721a9cb-290a-4d76-b796-ce40e6265ffe,**Kim's Testing Project** DB1901 - Bridge Replacement Bundle,__Kim's Testing Project__ DB1901 - Bridge Replacement Bundle,TRUE,2000-01-01,,toMig_1134
+a45bffdb-4769-4f5b-990b-3bc50e6e46ec,*CNX347 - PIN 115684.00 - Polk County - SR 68 Bridge over Brush Creek,_CNX347 - PIN 115684.00 - Polk County - SR 68 Bridge over Brush Creek,TRUE,2000-01-01,,toMig_1135
+cdc98f0e-2321-420f-bcc2-e7610128e2d9,*CNX073- PIN 131402.00 - Meigs - SR58/SR68 - Roundabout,_CNX073- PIN 131402.00 - Meigs - SR58_SR68 - Roundabout,TRUE,2000-01-01,,toMig_1135
+e6a24c66-7ac7-4bb3-be9f-3d43ca2fc8f1,CNX116 - PIN  - Hamilton County - SR 8 Ped Facilities,CNX116 - PIN  - Hamilton County - SR 8 Ped Facilities,TRUE,2000-01-01,,toMig_1135
+e843ab71-12ed-43ba-926a-3a033ce0fb42,CNY001-130873.00-Rutherford,CNY001-130873.00-Rutherford,TRUE,2000-01-01,,toMig_1135
+287ac32f-3874-42ad-99c6-38f15af6304c,"*CNX258 - 128969.00 - Marion County - SIA (Valmont Industries & Mueller Water Products) - FDR, Safety","_CNX258 - 128969.00 - Marion County - SIA (Valmont Industries & Mueller Water Products) - FDR, Safety",TRUE,2000-01-01,,toMig_1135
+9bd9e475-c7e6-4340-8c12-306125046999,CNX302 - 128634.43 - LAKE,CNX302 - 128634.43 - LAKE,TRUE,2000-01-01,,toMig_1136
+b8687b04-d256-4069-8029-1bd64909eae6,"CNX352 - 133441.10 & 133441.11- Carroll, Decatur, Gibson, Madison, Obion and Weakley","CNX352 - 133441.10 & 133441.11- Carroll, Decatur, Gibson, Madison, Obion and Weakley",TRUE,2000-01-01,,toMig_1136
+23c98e27-27c6-4fb7-9837-41110c79cb7d,CNX001-132406-00-Maury,CNX001-132406-00-Maury,TRUE,2000-01-01,,toMig_1136
+274407c3-6042-47ab-afb1-635feb77eb13,CNT932-126902.00-Montgomery,CNT932-126902.00-Montgomery,TRUE,2000-01-01,,toMig_1136
+2ae7574d-8d15-4fdb-9cb2-e717ff651d83,CNW373 - PIN 131376.00 - Cumberland - US 70 (SR 1 ) Roundabout @ SR 392 & SR 101,CNW373 - PIN 131376.00 - Cumberland - US 70 (SR 1 ) Roundabout @ SR 392 & SR 101,TRUE,2000-01-01,,toMig_1136
+137c7475-95c3-41e2-a38e-a48ebe879644,CNW151 - 113320.01 - Lauderdale,CNW151 - 113320.01 - Lauderdale,TRUE,2000-01-01,,toMig_1136
+a94f07d3-acf1-4e9a-ba46-df2c825db0ae,CNX260-124142-00-Cheatham,CNX260-124142-00-Cheatham,TRUE,2000-01-01,,toMig_1136
+e71dbd59-9c83-4177-861f-cc57f4082cb2,CNV183 - 101344.01 - Obion,CNV183 - 101344.01 - Obion,TRUE,2000-01-01,,toMig_1137
+5fe72f1a-9b5b-4864-9fef-dc1996a4486f,CNW132 - 126899.01 - Lawrence,CNW132 - 126899.01 - Lawrence,TRUE,2000-01-01,,toMig_1137
+91008577-7c8c-4004-ab76-e583bf2c2a4d,CNR078 - PIN 100255.03 - McMinn,CNR078 - PIN 100255.03 - McMinn,TRUE,2000-01-01,,toMig_1137
+d0d422a8-bf32-4abb-a787-8b32f54936df,*CNV062 - PINs 120298.00 & 129780.00 - Franklin - SRs 15 & 50 Construction,_CNV062 - PINs 120298.00 & 129780.00 - Franklin - SRs 15 & 50 Construction,TRUE,2000-01-01,,toMig_1137
+7e37bb90-00ee-4263-9556-754ee140fbaa,*CNW001 - PIN 124080.01 - Hamilton - US127 Construction,_CNW001 - PIN 124080.01 - Hamilton - US127 Construction,TRUE,2000-01-01,,toMig_1138
+9abb1b24-3a9e-41c0-b8f2-67245254f765,CNX140-124605-00-Maury,CNX140-124605-00-Maury,TRUE,2000-01-01,,toMig_1138
+b470fb8d-90fb-48d1-bdfb-bef9e1112fd7,*CNW212 - PIN: 127967.00 - Warren - SIA (Motlow Advanced Robotics),_CNW212 - PIN_ 127967.00 - Warren - SIA (Motlow Advanced Robotics),TRUE,2000-01-01,,toMig_1139
+291e0599-bd9b-42c0-a1f9-5b7e692f897e,*CNW348 - PIN:127824.00 - Cannon - U.S. 70s (S.R. 1) J-Turn,_CNW348 - PIN_127824.00 - Cannon - U.S. 70s (S.R. 1) J-Turn,TRUE,2000-01-01,,toMig_1139
+7d7ce668-32fb-472f-b02a-556873cc789e,CNW134 - 114149.03 - Madison,CNW134 - 114149.03 - Madison,TRUE,2000-01-01,,toMig_1140
+34759503-c125-4753-bcdc-d86a4f77297c,CNW231 - PIN 101044.01 - Cumberland - US127,CNW231 - PIN 101044.01 - Cumberland - US127,TRUE,2000-01-01,,toMig_1142
+7a98cb75-e72e-44df-a885-a29848243d7a,*CNV307 - PIN130524.00 - Marion - SR-27 Slide Repair,_CNV307 - PIN130524.00 - Marion - SR-27 Slide Repair,TRUE,2000-01-01,,toMig_1142
+a11f0092-c698-4bd6-a070-a05a49d83483,*CNV912 - PINs 115366.01 & 125258.00 (Sites 3&4) - Marion - Rockfall Mitigation,_CNV912 - PINs 115366.01 & 125258.00 (Sites 3&4) - Marion - Rockfall Mitigation,TRUE,2000-01-01,,toMig_1143
+ee205236-132d-42eb-8b70-1deadf0efa73,CNV010 - PIN 104963.01 - Cumberland - SR 462 connector b/n SR28 & SR298,CNV010 - PIN 104963.01 - Cumberland - SR 462 connector b_n SR28 & SR298,TRUE,2000-01-01,,toMig_1144
+278f6993-9d95-48ab-8998-b6d817e518fa,*CNV130 - PIN101430.01 - Bradley County (SR 60),_CNV130 - PIN101430.01 - Bradley County (SR 60),TRUE,2000-01-01,,toMig_1145
+d61886aa-5a0c-458f-995a-a944e947b85d,*CNU011 - PIN 112833.00 - Hamilton County - I-24 @ Broad / Market,_CNU011 - PIN 112833.00 - Hamilton County - I-24 @ Broad _ Market,TRUE,2000-01-01,,toMig_1146
+92a1607d-f1d5-442f-9acf-d264cace1f1f,CNS289 - 100339.01 - SHELBY,CNS289 - 100339.01 - SHELBY,TRUE,2000-01-01,,toMig_1149
+f6455dd2-da83-47f2-b4a2-b7b959a92e27,DB1901 - Bridge Replacement Bundle - Region 4,DB1901 - Bridge Replacement Bundle - Region 4,TRUE,2000-01-01,,toMig_1150
+e3ed36d4-91bf-42a1-9a6d-cd2a381d2ddc,CNV281-124263.04-Robertson,CNV281-124263.04-Robertson,TRUE,2000-01-01,,toMig_1152
+dead1cd5-6e24-5f7a-234b-d13165879f54,DB1802 - US64/SR40 Bridge Over Ocoee River,DB1802 - US64_SR40 Bridge Over Ocoee River,TRUE,2000-01-01,,toMig_1152
+7f57f8cc-d939-7eb2-7ef2-bdd42034b445,CMGC04 - SR-1 Broadway Bridge - Master Set,CMGC04 - SR-1 Broadway Bridge - Master Set,TRUE,2000-01-01,,toMig_1153
+535f4743-d4de-0f04-96ef-3752a49dd9da,DB2001 Buckner Interchange at I-65 - Master Set,DB2001 Buckner Interchange at I-65 - Master Set,TRUE,2000-01-01,,toMig_1155
